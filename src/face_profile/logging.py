@@ -17,6 +17,7 @@ _ALLOWED_CONTEXT = (
     "candidate_id",
     "correlation_id",
     "duration_ms",
+    "face_count",
     "state",
     "error_code",
 )

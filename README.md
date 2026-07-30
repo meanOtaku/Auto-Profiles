@@ -1,8 +1,8 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project is currently at **M1: Camera Input**; no facial recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project is currently at **M2: Multi-Face Detection**; no identity recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
 
-## M1 Capabilities
+## M2 Capabilities
 
 - Strict immutable YAML configuration with unknown-key rejection.
 - Hardware-disabled startup by default.
@@ -14,6 +14,11 @@ A headless-first, local identity and device-personalization service built increm
 - Protocol boundaries and deterministic mocks for device settings.
 - Explicit service lifecycle states with fail-closed resource startup and shutdown.
 - A hardware-free CLI lifecycle check.
+- Profile-independent detector contracts for zero, one, or multiple faces.
+- An OpenCV YuNet adapter that returns clipped boxes, confidence, and documented five-point landmarks in deterministic order.
+- A strict SHA-256 integrity gate for explicitly supplied detector models; no model artifact is bundled or enabled by default.
+- Explicit debug overlays that reuse the private, no-follow frame-output boundary.
+- A one-frame `detect` CLI command with safe count-only structured output.
 - Locked dependencies and CI gates for linting, formatting, typing, tests, audits, secret scanning, license metadata, and package builds.
 
 ## Quick Start
@@ -26,6 +31,8 @@ uv run face-profile --config config/default.yaml check
 ```
 
 A successful check emits `ServiceStarted` and `ServiceStopped` JSON events and exits with status `0`. It does not access a camera or change host settings.
+
+The `detect` command requires both camera and detection configuration. The shipped defaults keep both disabled and mock-backed. See `docs/RUNBOOK.md` for a hardware-free example and integrity-pinned YuNet setup.
 
 ## Development Checks
 
@@ -53,7 +60,7 @@ uv build
 
 ## Safety and Privacy
 
-Do not commit real face images, embeddings, credentials, profile databases, or runtime exports. Camera access remains disabled until a frame source is explicitly configured. Future non-loopback APIs must fail closed unless authentication is configured.
+Do not commit real face images, embeddings, credentials, profile databases, model artifacts without provenance review, or runtime exports. Camera and detection access remain disabled until explicitly configured. Detection geometry and debug overlays are sensitive and are not written unless an explicit output path is supplied. Future non-loopback APIs must fail closed unless authentication is configured.
 
 ## Development Policy
 

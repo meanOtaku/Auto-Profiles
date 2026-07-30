@@ -85,6 +85,32 @@ class CameraConfig(StrictModel):
         return self
 
 
+class DetectionConfig(StrictModel):
+    """Profile-independent detector configuration and model-integrity gate."""
+
+    enabled: bool = False
+    backend: Literal["mock", "yunet"] = "mock"
+    model_path: ConfigPath | None = None
+    model_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    nms_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    top_k: int = Field(default=5000, ge=1, le=100_000)
+
+    @model_validator(mode="after")
+    def validate_backend_fields(self) -> Self:
+        if self.backend == "yunet" and (self.model_path is None or self.model_sha256 is None):
+            raise ValueError("YuNet requires a model path and SHA-256")
+        if self.backend == "mock" and (
+            self.model_path is not None or self.model_sha256 is not None
+        ):
+            raise ValueError("mock detector does not accept model configuration")
+        if self.backend == "mock" and (
+            self.confidence_threshold != 0.5 or self.nms_threshold != 0.3 or self.top_k != 5000
+        ):
+            raise ValueError("detector thresholds are YuNet-only controls")
+        return self
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -102,6 +128,7 @@ class AppConfig(StrictModel):
     """Root application configuration."""
 
     camera: CameraConfig = CameraConfig()
+    detection: DetectionConfig = DetectionConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 

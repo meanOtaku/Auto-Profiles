@@ -2,7 +2,7 @@
 
 ## Supported Foundation
 
-M1 uses CPython 3.11.15 and uv 0.11.32 as its exact baseline. CI also verifies CPython 3.12.13. Project metadata accepts maintained CPython 3.11–3.12 patch releases. The default command performs a hardware-free lifecycle check. It does not activate a camera, persist biometric data, or change host settings.
+M2 uses CPython 3.11.15 and uv 0.11.32 as its exact baseline. CI also verifies CPython 3.12.13. Project metadata accepts maintained CPython 3.11–3.12 patch releases. The default command performs a hardware-free lifecycle check. It does not activate a camera, load a detector model, persist biometric data, or change host settings.
 
 ## Bootstrap
 
@@ -43,10 +43,35 @@ uv run python -c "from pathlib import Path; from face_profile.camera import Imag
 
 The output path is explicit. The service does not save frames by default.
 
+## Configure One-Frame Detection
+
+Detection remains disabled and mock-backed by default. A hardware-free contract check can enable the mock detector alongside the synthetic image source:
+
+```yaml
+detection:
+  enabled: true
+  backend: mock
+  model_path: null
+  model_sha256: null
+  confidence_threshold: 0.5
+  nms_threshold: 0.3
+  top_k: 5000
+```
+
+Run one frame and optionally write a private debug PNG:
+
+```bash
+uv run face-profile --config /path/to/config.yaml detect --debug-output /tmp/face-profile-m2.png
+```
+
+The JSON result exposes only `face_count`; it does not log boxes, landmarks, pixels, or configured paths. Debug output is explicit, owner-only, and rejects symbolic-link following where supported.
+
+For real local inference, set `backend: yunet`, an explicit `model_path`, and the exact lowercase SHA-256. The factory verifies the digest before OpenCV loads the file. M2 does not bundle a model or claim an accuracy evaluation. The interoperability smoke test used OpenCV Zoo's `face_detection_yunet_2023mar.onnx` (232,589 bytes), sourced from <https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx>, SHA-256 `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4`. Its upstream model source records the BSD 3-Clause license; review current provenance and intended-use rights before deployment.
+
 Expected startup failures are written as JSON to standard error:
 
 - Exit `2`: missing or invalid configuration.
-- Exit `3`: service resource startup failure.
+- Exit `3`: service resource startup or detection failure.
 - Exit `4`: service resource shutdown failure.
 
 ## Quality Gates
@@ -70,6 +95,10 @@ Validate YAML syntax, remove unknown keys, and ensure booleans and integers use 
 ### Camera source unavailable
 
 The default configuration intentionally disables hardware. For file sources, verify `path` exists and is a supported image or video. For webcams, verify `device_index`, host permissions, and exclusive device access. Startup fails closed with exit `3` if the source cannot open.
+
+### Detector unavailable
+
+Confirm `detection.enabled`, the backend-specific controls, model-file availability, and lowercase SHA-256. Model configuration is rejected when incomplete, and a missing, changed, or unloadable artifact fails with a controlled error that omits the configured path and backend details.
 
 ### Dependency drift
 

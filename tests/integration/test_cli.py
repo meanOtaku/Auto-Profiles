@@ -159,3 +159,74 @@ def test_cli_attempts_cleanup_after_startup_failure(
 
     assert exit_code == 3
     assert calls == ["start", "stop"]
+
+
+def test_cli_detects_one_frame_and_writes_private_debug_output(tmp_path: Path) -> None:
+    from face_profile.cli import main
+
+    image_path = tmp_path / "fixture.png"
+    assert cv2.imwrite(str(image_path), np.zeros((32, 32, 3), dtype=np.uint8))
+    debug_path = tmp_path / "debug.png"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"camera:\n  enabled: true\n  source: image\n  path: {image_path}\n"
+        "detection:\n  enabled: true\n  backend: mock\n",
+        encoding="utf-8",
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    exit_code = main(
+        ["--config", str(config), "detect", "--debug-output", str(debug_path)],
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 0
+    event = json.loads(stdout.getvalue())
+    assert event["event_type"] == "DetectionCompleted"
+    assert event["face_count"] == 0
+    assert debug_path.stat().st_mode & 0o077 == 0
+    assert stderr.getvalue() == ""
+
+
+def test_cli_reports_cleanup_failure_when_detection_and_close_both_fail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import face_profile.cli as cli
+
+    calls: list[str] = []
+
+    class FailingSource:
+        def open(self) -> None:
+            calls.append("open")
+
+        def read(self) -> None:
+            calls.append("read")
+            raise OSError("private detection details")
+
+        def close(self) -> None:
+            calls.append("close")
+            raise OSError("private cleanup details")
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "camera:\n  enabled: true\n  source: mock\ndetection:\n  enabled: true\n  backend: mock\n",
+        encoding="utf-8",
+    )
+    stderr = io.StringIO()
+    monkeypatch.setattr(cli, "create_frame_source", lambda config: FailingSource())
+
+    exit_code = cli.main(
+        ["--config", str(config), "detect"],
+        stdout=io.StringIO(),
+        stderr=stderr,
+    )
+
+    assert exit_code == 4
+    assert calls == ["open", "read", "close"]
+    event = json.loads(stderr.getvalue())
+    assert event["event_type"] == "DetectionFailed"
+    assert event["error_code"] == "detection_cleanup_failed"
+    assert "private" not in stderr.getvalue().lower()

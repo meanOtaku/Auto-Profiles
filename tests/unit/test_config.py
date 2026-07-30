@@ -122,3 +122,35 @@ def test_load_config_rejects_webcam_controls_for_file_source(tmp_path: Path) -> 
 
     with pytest.raises(ConfigurationError, match="invalid configuration"):
         load_config(path)
+
+
+def test_detection_config_requires_model_integrity_for_yunet() -> None:
+    from pydantic import ValidationError
+
+    from face_profile.config import DetectionConfig
+
+    with pytest.raises(ValidationError, match="model path and SHA-256"):
+        DetectionConfig(enabled=True, backend="yunet")
+
+
+def test_load_config_accepts_integrity_pinned_yunet_detector(tmp_path: Path) -> None:
+    from face_profile.config import load_config
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "detection:\n"
+        "  enabled: true\n"
+        "  backend: yunet\n"
+        "  model_path: detector.onnx\n"
+        f"  model_sha256: {'a' * 64}\n"
+        "  confidence_threshold: 0.6\n"
+        "  nms_threshold: 0.2\n"
+        "  top_k: 250\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config.detection.model_path == Path("detector.onnx")
+    assert config.detection.model_sha256 == "a" * 64
+    assert config.detection.confidence_threshold == 0.6

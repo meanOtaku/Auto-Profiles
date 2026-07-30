@@ -89,6 +89,10 @@ Must not:
 - Select the active user
 - Apply settings
 
+M2 defines an immutable, profile-independent `FaceDetector` boundary. `FaceDetection` contains a clipped `BoundingBox`, normalized confidence, and five named landmarks; detections are ordered deterministically by confidence and position. `YuNetFaceDetector` translates OpenCV `FaceDetectorYN` rows and rejects malformed, non-finite, invalid-confidence, non-intersecting, or over-limit backend output. `MockFaceDetector` supplies deterministic zero/one/multiple cases without biometric fixtures.
+
+No detector model is bundled or selected as a production default in M2. The factory reads an explicitly configured local artifact once, verifies that exact byte buffer against its SHA-256, and passes the verified buffer directly to OpenCV, preserving both the integrity boundary and M5 provenance decision gate. Debug rendering copies the frame, draws only the M2 metadata, and persists only through the explicit private frame-output boundary.
+
 ### 4.3 Profile Domain
 
 Responsibilities:

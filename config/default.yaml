@@ -6,10 +6,20 @@ camera:
   device_index: 0
   retry_attempts: 2
 
+detection:
+  # M2 remains mock-backed unless an integrity-pinned YuNet model is explicitly configured.
+  enabled: false
+  backend: mock
+  model_path: null
+  model_sha256: null
+  confidence_threshold: 0.5
+  nms_threshold: 0.3
+  top_k: 5000
+
 logging:
   level: INFO
 
 settings:
-  # M1 still uses the in-memory adapter; these values never change host settings.
+  # M2 still uses the in-memory adapter; these values never change host settings.
   volume: 50
   brightness: 50

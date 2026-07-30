@@ -75,7 +75,7 @@ Maintain versioned, privacy-safe fixtures for:
 - Known versus unknown identity samples
 - Printed-photo spoof tests
 
-Do not commit personal biometric datasets without explicit authorization. M1 uses only the geometric fixtures under `tests/fixtures/camera/`; their provenance and SHA-256 checksums are recorded beside them. Temporary webcam failures are produced with injected capture doubles rather than live hardware.
+Do not commit personal biometric datasets without explicit authorization. M1 uses only the geometric fixtures under `tests/fixtures/camera/`; their provenance and SHA-256 checksums are recorded beside them. M2 exercises zero, one, and multiple detections by pairing those non-biometric geometric frames with injected YuNet-compatible result rows. This verifies the detector contract, filtering, ordering, landmarks, error handling, and debug output without claiming model-accuracy evidence. Accuracy evaluation on approved face data remains an M5 gate. Temporary webcam failures are produced with injected capture doubles rather than live hardware.
 
 ## 4. Determinism
 
