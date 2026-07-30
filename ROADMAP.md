@@ -341,7 +341,7 @@ Includes M14–M15 plus security, privacy, packaging, and deployment review.
 | Milestone | Name | Status | Evidence |
 |---|---|---|---|
 | M0 | Project scaffolding | Complete | [M0 report](docs/reports/M0.md): 29 tests; Ruff, mypy, locked build, clean-wheel CLI smoke test, dependency/license audits, and secret scan passed on 2026-07-30. |
-| M1 | Camera sources | Not started | |
+| M1 | Camera sources | Complete | [M1 report](docs/reports/M1.md): 59 tests pass on Python 3.11.15 and 3.12.13; local quality, audit, packaging, privacy, secret-scanning, and independent-review gates passed on 2026-07-30. |
 | M2 | Multi-face detection | Not started | |
 | M3 | Tracking | Not started | |
 | M4 | Quality and alignment | Not started | |

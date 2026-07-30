@@ -1,20 +1,24 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project is currently at **M0: Project Scaffolding**; no facial recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project is currently at **M1: Camera Input**; no facial recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
 
-## M0 Capabilities
+## M1 Capabilities
 
 - Strict immutable YAML configuration with unknown-key rejection.
 - Hardware-disabled startup by default.
 - Newline-delimited JSON logs with an explicit context allowlist.
-- Protocol boundaries and deterministic mocks for frame sources and device settings.
+- Webcam, image, video, and deterministic mock frame sources.
+- Immutable camera-health snapshots and bounded webcam reconnect attempts.
+- Explicit frame saving with controlled encoder failures.
+- Versioned synthetic image/video fixtures containing no biometric data.
+- Protocol boundaries and deterministic mocks for device settings.
 - Explicit service lifecycle states with fail-closed resource startup and shutdown.
 - A hardware-free CLI lifecycle check.
 - Locked dependencies and CI gates for linting, formatting, typing, tests, audits, secret scanning, license metadata, and package builds.
 
 ## Quick Start
 
-Exact M0 baseline: CPython 3.11.15 and uv 0.11.32. CI also verifies CPython 3.12.13 compatibility. Project metadata accepts maintained CPython 3.11 and 3.12 patch releases, while the committed lockfile and exact development-tool pins make the verified toolchain reproducible.
+Exact baseline: CPython 3.11.15 and uv 0.11.32. CI also verifies CPython 3.12.13 compatibility. Project metadata accepts maintained CPython 3.11 and 3.12 patch releases, while the committed lockfile and exact development-tool pins make the verified toolchain reproducible.
 
 ```bash
 uv sync --locked --all-groups

@@ -1,10 +1,10 @@
 """Validated application configuration."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 from yaml.constructor import ConstructorError
 
 
@@ -56,10 +56,33 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
+def _path_from_yaml(value: object) -> object:
+    if type(value) is str:
+        return Path(value)
+    return value
+
+
+ConfigPath = Annotated[Path, BeforeValidator(_path_from_yaml)]
+
+
 class CameraConfig(StrictModel):
-    """Camera startup configuration."""
+    """Camera source and bounded recovery configuration."""
 
     enabled: bool = False
+    source: Literal["mock", "webcam", "image", "video"] = "mock"
+    path: ConfigPath | None = None
+    device_index: int = Field(default=0, ge=0)
+    retry_attempts: int = Field(default=2, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def validate_source_path(self) -> Self:
+        if self.source in {"image", "video"} and self.path is None:
+            raise ValueError("image and video sources require a path")
+        if self.source in {"mock", "webcam"} and self.path is not None:
+            raise ValueError("mock and webcam sources do not accept a path")
+        if self.source != "webcam" and (self.device_index != 0 or self.retry_attempts != 2):
+            raise ValueError("device index and retry attempts are webcam-only controls")
+        return self
 
 
 class LoggingConfig(StrictModel):

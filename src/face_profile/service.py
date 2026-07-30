@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from face_profile.camera import FrameSource
+from face_profile.camera import FrameSourceLifecycle
 from face_profile.config import AppConfig
 from face_profile.settings import SettingsAdapter
 
@@ -29,7 +29,7 @@ class Service:
         *,
         config: AppConfig,
         settings: SettingsAdapter,
-        frame_source: FrameSource | None = None,
+        frame_source: FrameSourceLifecycle | None = None,
     ) -> None:
         self._config = config
         self._settings = settings

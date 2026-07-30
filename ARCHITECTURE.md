@@ -57,6 +57,8 @@ Must not:
 - Access profile records
 - Apply settings
 
+M1 implementations are `ImageFrameSource`, `VideoFrameSource`, `WebcamFrameSource`, and `MockFrameSource`. They emit `uint8` NumPy-backed `Frame` values, expose immutable `CameraHealth` snapshots, and follow explicit open/read/close lifecycle semantics. Webcam recovery is bounded by configuration. Saving is separate and explicit; no source persists frames automatically. OpenCV is isolated behind a narrow capture protocol so file and webcam failure behavior can be tested without hardware.
+
 ### 4.2 Vision Layer
 
 Subcomponents:

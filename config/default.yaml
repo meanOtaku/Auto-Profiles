@@ -1,11 +1,15 @@
 camera:
   # Hardware access remains off until an explicit frame source is configured.
   enabled: false
+  source: mock
+  path: null
+  device_index: 0
+  retry_attempts: 2
 
 logging:
   level: INFO
 
 settings:
-  # M0 uses the in-memory adapter; these values never change host settings.
+  # M1 still uses the in-memory adapter; these values never change host settings.
   volume: 50
   brightness: 50

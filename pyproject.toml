@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 authors = [{ name = "Vaibhav Bisht" }]
 dependencies = [
+  "numpy==2.4.6",
+  "opencv-python-headless==5.0.0.93",
   "pydantic==2.13.4",
   "PyYAML==6.0.3",
 ]

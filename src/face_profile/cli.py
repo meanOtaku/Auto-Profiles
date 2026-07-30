@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from face_profile.camera.factory import create_frame_source
 from face_profile.config import ConfigurationError, load_config
 from face_profile.logging import configure_logging
 from face_profile.service import Service
@@ -48,7 +49,11 @@ def main(
             brightness=config.settings.brightness,
         )
     )
-    service = Service(config=config, settings=settings)
+    service = Service(
+        config=config,
+        settings=settings,
+        frame_source=create_frame_source(config.camera),
+    )
     try:
         service.start()
     except Exception:
