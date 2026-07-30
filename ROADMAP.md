@@ -21,11 +21,15 @@ Deliver:
 - Mock camera
 - Mock settings adapter
 - CI checks
+- Exact Python and tooling baseline
+- Threat model and secure deployment defaults
+- Initial ADRs for model selection, encryption/retention, API security, and worker execution
 
 Exit criteria:
 
 - Service skeleton starts.
 - Tests, linting, and type checking pass.
+- Loopback-only defaults and fail-closed production configuration are documented.
 
 ### M1: Camera Sources
 
@@ -63,7 +67,7 @@ Deliver:
 - Tracker adapter
 - Stable temporary track IDs
 - Track lifecycle
-- Best-frame retention
+- Bounded track-sample retention using basic metadata
 
 Exit criteria:
 
@@ -76,6 +80,7 @@ Deliver:
 - Blur, size, exposure, pose, and occlusion checks
 - Alignment
 - Rejection reasons
+- Quality-scored best-frame selection
 
 Exit criteria:
 
@@ -89,6 +94,7 @@ Deliver:
 - Normalization
 - Cosine similarity
 - Threshold-evaluation script
+- Model provenance, license, checksum, dimension, dtype, and compatibility record
 
 Exit criteria:
 
@@ -108,10 +114,14 @@ Deliver:
 - Repositories
 - Migrations
 - CRUD CLI
+- Encryption-at-rest and key-management integration
+- Retention and secure-deletion behavior
+- Encrypted export/import and backup/restore policy
 
 Exit criteria:
 
 - Profiles and embeddings survive restart.
+- Permanent biometric data, database sidecars, temporary artifacts, and exports follow the documented encryption and retention policy.
 
 ### M7: Known-Person Recognition
 
@@ -137,16 +147,20 @@ Deliver:
 - Duplicate prevention
 - Promotion transaction
 - Candidate CLI/API review
+- Minimum temporal spoof and replay checks
+- Manual owner approval by default
 
 Exit criteria:
 
 - One-frame enrollment is impossible.
 - Simultaneous unknown users remain separate.
 - Promotion is atomic.
+- Printed-photo and replay scenarios cannot bypass approval and liveness gates.
+- Automatic promotion remains disabled unless all production gates are explicitly enabled and tested.
 
 ## Phase 3 — Personalization
 
-### M9: Settings Abstraction
+### M9: Settings Abstraction and Initial Platform Adapter
 
 Deliver:
 
@@ -154,10 +168,14 @@ Deliver:
 - Validation
 - Mock adapter
 - Application logs and events
+- One selected OS and desktop-environment adapter
+- Capability and permission detection
+- Safe ranges, rate limits, feedback-loop protection, and rollback or fail-safe behavior
 
 Exit criteria:
 
-- Complete automated test coverage uses only mocks.
+- All specified automated settings behavior is covered using mocks and never changes host settings.
+- Manual tests pass for the selected real platform adapter.
 
 ### M10: Active-User Manager
 
@@ -202,11 +220,16 @@ Deliver:
 - Pause and resume
 - Graceful shutdown
 - Service installation documentation
+- Versioned `/api/v1` surface
+- Authentication, authorization, administrative roles, and audit records
+- Rate limits, request-size limits, idempotency, and optimistic concurrency
+- Secure non-loopback deployment configuration
 
 Exit criteria:
 
 - Full operation without a UI.
 - Restart preserves profiles and settings.
+- Non-loopback startup fails closed without production security configuration.
 
 ### M13: Optional UI
 
@@ -227,11 +250,11 @@ Exit criteria:
 
 ## Phase 5 — Safety and Scale
 
-### M14: Liveness
+### M14: Advanced Liveness
 
 Deliver in stages:
 
-1. Temporal movement checks
+1. Strengthen the minimum temporal checks introduced in M8
 2. Passive anti-spoof model
 3. Optional active challenge
 4. Optional depth or IR support
@@ -263,7 +286,6 @@ Exit criteria:
 Potential future work:
 
 - Multi-camera fusion
-- Encrypted profile storage
 - Profile synchronization across trusted devices
 - Mobile companion application
 - Plugin system for new settings
@@ -274,7 +296,7 @@ Potential future work:
 - Multi-monitor profiles
 - Home-automation integration
 - Federated or privacy-preserving profile synchronization
-- Administrative roles and audit export
+- Audit export and long-term archival policy
 
 ## Release Milestones
 
@@ -292,7 +314,7 @@ Includes M0–M8.
 
 Purpose:
 
-- Persistent known recognition and conservative unknown enrollment.
+- Persistent known recognition and conservative, owner-reviewed unknown enrollment.
 
 ### Headless Beta
 
@@ -327,10 +349,10 @@ Includes M14–M15 plus security, privacy, packaging, and deployment review.
 | M6 | Persistent profiles | Not started | |
 | M7 | Known-person recognition | Not started | |
 | M8 | Candidate enrollment | Not started | |
-| M9 | Settings abstraction | Not started | |
+| M9 | Settings abstraction and initial platform adapter | Not started | |
 | M10 | Active-user manager | Not started | |
 | M11 | Last-used settings | Not started | |
 | M12 | Headless daemon and API | Not started | |
 | M13 | Optional UI | Not started | |
-| M14 | Liveness | Not started | |
+| M14 | Advanced liveness | Not started | |
 | M15 | Performance and scale | Not started | |

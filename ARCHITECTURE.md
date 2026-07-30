@@ -144,6 +144,8 @@ The domain layer depends on repository interfaces, not on a specific database im
 
 Use an in-process event bus initially. Events should be immutable and typed.
 
+Separate transient telemetry from durable domain events. Frame, queue, and performance telemetry may be dropped according to an explicit overload policy. Profile creation, promotion, merge, deletion, consent, and settings state changes must be durable. Durable events must be written atomically with their state change using a transactional outbox or equivalent mechanism.
+
 Events support:
 
 - Logging
@@ -159,7 +161,8 @@ Responsibilities:
 - REST resources
 - WebSocket event stream
 - Input validation
-- Authentication when enabled
+- Authentication and authorization for every non-loopback deployment
+- API versioning, pagination, idempotency, rate limits, and optimistic concurrency
 - Error translation
 
 Must not contain domain decisions.
@@ -189,6 +192,8 @@ Start with one service process containing separate asynchronous workers:
 - Event persistence worker
 
 Use bounded queues between high-throughput stages. Dropping stale frames is preferable to accumulating unbounded latency.
+
+Model inference and blocking camera or OS operations must not execute directly on the API event loop. Blocking camera drivers use controlled threads; CPU-bound inference uses a bounded executor or worker process; GPU inference uses a bounded scheduling queue. Every queue must define capacity, overflow behavior, metrics, and shutdown semantics. Worker failures must affect health reporting and be supervised according to a documented restart policy.
 
 ## 6. Suggested Domain Models
 
@@ -237,6 +242,9 @@ Large image arrays should not be copied unnecessarily between stages.
 - updated_at
 - last_seen_at
 - merged_into_profile_id
+- enrollment_review_status
+- retention_expires_at, optional
+- optimistic_version
 
 ### face_embeddings
 
@@ -244,6 +252,9 @@ Large image arrays should not be copied unnecessarily between stages.
 - profile_id
 - model_name
 - model_version
+- model_checksum
+- embedding_dimension
+- numeric_dtype
 - vector
 - quality_score
 - source_image_path, optional
@@ -259,6 +270,10 @@ Large image arrays should not be copied unnecessarily between stages.
 - last_seen_at
 - sample_count
 - aggregate_quality
+- review_status
+- reviewed_by, optional
+- reviewed_at, optional
+- retention_expires_at
 - metadata_json
 
 ### candidate_embeddings
@@ -267,6 +282,13 @@ Large image arrays should not be copied unnecessarily between stages.
 - candidate_id
 - vector
 - quality_score
+- model_name
+- model_version
+- model_checksum
+- embedding_dimension
+- numeric_dtype
+- source_camera_id
+- source_track_id
 - created_at
 
 ### profile_settings
@@ -287,7 +309,11 @@ Large image arrays should not be copied unnecessarily between stages.
 - similarity, optional
 - camera_id
 - occurred_at
+- sequence
+- correlation_id
 - metadata_json
+
+All tables must define foreign keys, indexes, deletion behavior, schema constraints, and optimistic versioning where concurrent updates are possible. Important query or security fields must not be hidden only inside `metadata_json`.
 
 ## 8. Recognition Decision Logic
 
@@ -375,6 +401,13 @@ The camera worker should retry recoverable disconnections. Database-integrity er
 - Log identifiers rather than full biometric vectors.
 - Provide export and deletion operations.
 - Define configurable retention policies.
+- Encrypt permanent embeddings, retained images, exports, temporary artifacts, SQLite sidecar files, and backups according to the selected threat model.
+- Keep representative face-image storage disabled by default.
+- Store encryption keys separately from encrypted data and document rotation and recovery.
+- Require explicit owner review and approval for candidate promotion by default.
+- Require authentication and administrator authorization for every non-loopback administrative API.
+- Bind to loopback by default and fail closed when a non-loopback deployment lacks production security configuration.
+- Audit profile export, import, promotion, merge, deletion, and security-setting changes.
 
 ## 14. Deployment
 
@@ -387,6 +420,8 @@ Supported deployment targets may include:
 
 The initial production target should be selected before implementing OS-specific settings adapters.
 
+Development may run without authentication only when explicitly configured for loopback-only binding. Deployments exposed beyond loopback require transport protection, authentication, authorization, rate limiting, and secure secret management.
+
 ## 15. Architecture Decision Records
 
 Major decisions should be recorded under `docs/adr/` using short ADR files, including:
@@ -397,3 +432,6 @@ Major decisions should be recorded under `docs/adr/` using short ADR files, incl
 - UI framework
 - Liveness approach
 - Encryption and retention policy
+- API authentication, authorization, and audit policy
+- Model provenance and licensing
+- Worker execution and queue overload policy
