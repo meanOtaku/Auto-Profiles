@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main, alpha]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11.15", "3.12.13"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          version: "0.11.32"
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy src tests
+      - name: Test
+        run: uv run pytest
+      - name: Audit dependencies
+        run: uv run pip-audit
+      - name: Verify dependency license metadata
+        run: >-
+          uv run pip-licenses --from=mixed
+          --ignore-packages face-profile-system
+          --fail-on=UNKNOWN --format=plain
+      - name: Build distributions
+        run: uv build
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0

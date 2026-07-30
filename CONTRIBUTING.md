@@ -46,10 +46,13 @@ Keep pull requests small enough to review.
 Run the repository-defined equivalents of:
 
 ```bash
-ruff format --check .
-ruff check .
-mypy src
-pytest
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy src tests
+uv run pytest
+uv run pip-audit
+uv run pip-licenses --from=mixed --ignore-packages face-profile-system --fail-on=UNKNOWN --format=plain
+uv build
 ```
 
 When changing a milestone with hardware-facing behavior, also run the documented manual test.

@@ -1,0 +1,11 @@
+camera:
+  # Hardware access remains off until an explicit frame source is configured.
+  enabled: false
+
+logging:
+  level: INFO
+
+settings:
+  # M0 uses the in-memory adapter; these values never change host settings.
+  volume: 50
+  brightness: 50

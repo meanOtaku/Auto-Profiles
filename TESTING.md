@@ -257,15 +257,18 @@ Verify:
 Minimum gates:
 
 ```bash
-ruff format --check .
-ruff check .
-mypy src
-pytest
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy src tests
+uv run pytest
+uv run pip-audit
+uv run pip-licenses --from=mixed --ignore-packages face-profile-system --fail-on=UNKNOWN --format=plain
+uv build
 ```
 
 Add coverage reporting after the foundational milestones. Coverage is a diagnostic, not a substitute for scenario quality.
 
-CI should also add dependency-vulnerability scanning, secret scanning, model-checksum verification, and license inventory once dependencies and model artifacts are introduced.
+CI includes dependency-vulnerability scanning, secret scanning, and dependency-license inventory. Add model-checksum verification when model artifacts are introduced.
 
 ## 15. Milestone Test Report Template
 
