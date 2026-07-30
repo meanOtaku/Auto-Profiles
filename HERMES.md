@@ -104,6 +104,11 @@ Emit events and persist state
 10. Hardware and OS integrations must provide mock implementations for automated tests.
 11. Raw face images and biometric embeddings must be treated as sensitive data.
 12. All state changes must be observable through logs and events.
+13. Permanent biometric data must be encrypted at rest before persistent profiles are enabled.
+14. Candidate promotion requires explicit owner approval by default.
+15. Automatic promotion must remain disabled unless liveness, consent, and security requirements are explicitly enabled and tested.
+16. Administrative APIs must be authenticated whenever the service is reachable beyond loopback.
+17. Every model artifact must have recorded provenance, version, license, and checksum.
 
 ## Unknown-Person Policy
 
@@ -119,12 +124,16 @@ A candidate may become permanent only after all configured criteria pass, includ
 - No reliable match with an existing profile
 - No likely match with another active candidate
 - Liveness approval when liveness is enabled
+- Owner approval, unless explicitly configured automatic promotion is permitted
+
+Manual owner approval is the default. Automatic promotion is an opt-in production feature and must not be enabled until liveness checks, retention policy, API security, and biometric-data protection are active. Candidates must expire without creating permanent biometric profiles when approval is not granted.
 
 Suggested starting defaults:
 
 ```yaml
 enrollment:
   enabled: true
+  automatic_promotion: false
   minimum_samples: 5
   minimum_observation_seconds: 3
   minimum_quality: 0.65
@@ -195,6 +204,8 @@ Each profile should store:
 - Preferred settings
 - Recognition history
 - Merge and deletion audit data
+- Enrollment consent or review status
+- Retention and deletion timestamps
 
 Suggested profile states:
 
@@ -207,6 +218,8 @@ Suggested profile states:
 ## Settings System
 
 Recognition code must never directly control operating-system settings.
+
+The first supported operating system and desktop environment must be selected before implementing a real adapter. Unsupported capabilities must be reported explicitly rather than silently ignored.
 
 Provide a common interface and separate implementations:
 
@@ -366,21 +379,32 @@ The repository layer must support:
 
 ## Required API Surface
 
+All routes are versioned. Authentication may be disabled only for an explicitly configured loopback-only development deployment. Non-loopback startup must fail closed when authentication is unavailable.
+
 ```text
-GET    /health
-GET    /status
-GET    /profiles
-GET    /profiles/{id}
-PATCH  /profiles/{id}
-DELETE /profiles/{id}
-POST   /profiles/{id}/merge
-GET    /events
-GET    /settings/current
-PUT    /profiles/{id}/settings
-POST   /system/pause
-POST   /system/resume
-WS     /events/live
+GET    /api/v1/health
+GET    /api/v1/status
+GET    /api/v1/profiles
+GET    /api/v1/profiles/{id}
+PATCH  /api/v1/profiles/{id}
+DELETE /api/v1/profiles/{id}
+POST   /api/v1/profiles/{id}/merge
+POST   /api/v1/profiles/export
+POST   /api/v1/profiles/import
+GET    /api/v1/candidates
+GET    /api/v1/candidates/{id}
+POST   /api/v1/candidates/{id}/approve
+POST   /api/v1/candidates/{id}/reject
+DELETE /api/v1/candidates/{id}
+GET    /api/v1/events
+GET    /api/v1/settings/current
+PUT    /api/v1/profiles/{id}/settings
+POST   /api/v1/system/pause
+POST   /api/v1/system/resume
+WS     /api/v1/events/live
 ```
+
+Destructive and biometric-data operations require administrator authorization, audit records, machine-readable errors, idempotent retry behavior where appropriate, and optimistic concurrency for mutable profile resources.
 
 ## Required CLI Surface
 
@@ -434,6 +458,7 @@ Acceptance:
 
 - Application starts without a camera.
 - `pytest`, `ruff check .`, and type checking pass.
+- The exact Python/tooling baseline, threat model, secure defaults, and initial ADRs are documented.
 
 ### M1 — Camera Input
 
@@ -479,6 +504,7 @@ Acceptance:
 
 - Same-person and different-person test sets are evaluated.
 - Threshold evaluation reports false accepts and false rejects.
+- Model provenance, license, checksum, embedding dimension, dtype, and compatibility policy are recorded.
 
 ### M6 — Persistent Profile Database
 
@@ -488,6 +514,7 @@ Acceptance:
 
 - Profiles survive restarts.
 - One profile can contain multiple embeddings.
+- Embeddings, retained images, exports, temporary files, and SQLite sidecar files follow the documented encryption and retention policy.
 
 ### M7 — Known-Person Recognition
 
@@ -499,24 +526,28 @@ Acceptance:
 - Unknown people remain unknown.
 - Identity does not flicker rapidly.
 
-### M8 — Automatic Unknown Enrollment
+### M8 — Candidate Enrollment and Review
 
-Create temporary candidates, collect consistent observations, prevent duplicates, and promote qualified candidates.
+Create temporary candidates, collect consistent observations, prevent duplicates, apply minimum spoof checks, and support owner-reviewed promotion. Automatic promotion remains disabled by default.
 
 Acceptance:
 
 - A one-frame face never creates a permanent profile.
 - Two simultaneous unknown people remain separate.
 - Poorly observed known people do not immediately create duplicates.
+- Printed-photo and replay scenarios cannot bypass the configured approval and liveness gates.
+- Promotion is atomic, auditable, and idempotent.
 
-### M9 — Settings Abstraction
+### M9 — Settings Abstraction and Initial Platform Adapter
 
-Implement the settings interface and mock adapter before real OS adapters.
+Implement the settings interface and mock adapter first, then implement one explicitly selected operating-system and desktop-environment adapter.
 
 Acceptance:
 
 - Recognition tests never modify real device settings.
 - Invalid values are rejected.
+- Unsupported capabilities and permission failures are reported explicitly.
+- Real-adapter manual tests verify safe ranges, rate limits, feedback-loop suppression, and rollback or fail-safe behavior.
 
 ### M10 — Active-User Selection
 
@@ -546,6 +577,8 @@ Acceptance:
 - Health reporting works.
 - UI disconnection has no effect.
 - The service can start automatically after reboot.
+- The API is versioned, authenticated, authorized, rate-limited, and audited for administrative operations.
+- Non-loopback deployment fails closed without production security configuration.
 
 ### M13 — Optional UI
 
@@ -556,9 +589,9 @@ Acceptance:
 - Every operation uses the service API.
 - Closing the UI does not stop the system.
 
-### M14 — Liveness and Spoof Resistance
+### M14 — Advanced Liveness and Spoof Resistance
 
-Introduce temporal checks, passive anti-spoofing, and optional active challenges.
+Build on the minimum enrollment checks from M8 with measured passive anti-spoofing, optional active challenges, and optional depth or IR support.
 
 Acceptance:
 
@@ -597,6 +630,9 @@ The AI agent must:
 15. Produce a milestone report with summary, files changed, commands run, test results, manual verification, limitations, and known issues.
 16. Stop after the assigned milestone.
 17. Report failures honestly and do not fabricate test results.
+18. Never persist unencrypted permanent biometric data.
+19. Never enable non-loopback administrative APIs without authentication and authorization.
+20. Keep automatic candidate promotion disabled until its liveness, consent, retention, and security gates are verified.
 
 ## Standard Milestone Prompt
 

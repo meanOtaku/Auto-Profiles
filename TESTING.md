@@ -83,7 +83,9 @@ Do not commit personal biometric datasets without explicit authorization.
 - Mock time for duration and cooldown tests.
 - Use recorded frames rather than live cameras in CI.
 - Pin model versions in reproducible test environments.
+- Verify model and fixture checksums before tests begin.
 - Use tolerances for floating-point comparisons.
+- Record execution provider and hardware because deterministic results may vary slightly across providers.
 
 ## 5. Recognition Evaluation
 
@@ -96,6 +98,11 @@ The threshold-evaluation script should report:
 - Equal error rate where useful
 - Best-versus-second margin statistics
 - Results by camera or lighting scenario
+- False positive and false negative identification rates
+- Rank-1 identification accuracy and unknown-rejection performance
+- Confidence intervals
+- Results by pose, distance, occlusion, and relevant consented evaluation cohorts
+- Track identity-switch and candidate-contamination rates
 
 Do not declare a universal threshold without dataset-specific evaluation.
 
@@ -113,6 +120,10 @@ Required automated scenarios:
 8. Candidate expires before qualification.
 9. Promotion is interrupted by a database failure.
 10. Concurrent promotion attempts occur.
+11. Printed photograph is presented during enrollment.
+12. Phone or tablet replay is presented during enrollment.
+13. Candidate qualifies but owner approval is absent.
+14. An automatic-promotion configuration is rejected when required production gates are missing.
 
 Expected safety property:
 
@@ -148,13 +159,19 @@ Test:
 - Rapid slider movement
 - No active profile
 - Multiple present profiles with one selected active profile
+- Permission denied by the operating system
+- Unsupported setting capability
+- Partial application and rollback or fail-safe behavior
+- Rate limiting of repeated setting changes
 
 ## 9. API Tests
 
 Test:
 
 - Schema validation
-- Authentication and authorization when enabled
+- Authentication and authorization for every non-loopback deployment
+- Rejection of insecure non-loopback startup
+- API versioning
 - Pagination
 - Profile CRUD
 - Candidate review
@@ -163,6 +180,8 @@ Test:
 - Pause and resume
 - WebSocket events
 - Destructive-operation safeguards
+- Idempotent retries and optimistic-concurrency conflicts
+- WebSocket authorization, reconnect, replay, and slow-consumer behavior
 
 ## 10. Database Tests
 
@@ -178,6 +197,9 @@ Test:
 - Soft delete
 - Export and import
 - Model-version metadata
+- Encryption and key-unavailable failure behavior
+- Backup restore and SQLite WAL/sidecar handling
+- Deletion from candidate, embedding, image, temporary, export, and retained-backup surfaces
 
 ## 11. Performance Tests
 
@@ -191,6 +213,8 @@ Measure separately:
 - End-to-end recognition confirmation
 - CPU, GPU, and memory use
 - Queue depth and dropped-frame count
+- API responsiveness while inference is saturated
+- Slow-consumer and bounded-queue behavior
 
 Performance tests must record target hardware and configuration.
 
@@ -207,6 +231,10 @@ Test:
 - Worker crash
 - Graceful shutdown
 - Restart with persisted profiles
+- Queue overload
+- Shutdown during inference, candidate promotion, and settings application
+- Repeated worker failure and restart-limit behavior
+- Corrupt or checksum-mismatched model artifact
 
 ## 13. Security and Privacy Tests
 
@@ -218,6 +246,11 @@ Verify:
 - Deleted profile data follows the configured retention policy
 - Paths cannot escape configured storage directories
 - Export files do not unintentionally contain secrets
+- Permanent embeddings, retained images, SQLite sidecars, temporary files, exports, and governed backups are encrypted as required
+- Encryption keys are not stored beside encrypted data
+- Candidate promotion requires owner approval by default
+- Non-loopback API startup fails without authentication and authorization
+- Audit records exist for export, import, promotion, merge, deletion, and security changes
 
 ## 14. CI Quality Gates
 
@@ -231,6 +264,8 @@ pytest
 ```
 
 Add coverage reporting after the foundational milestones. Coverage is a diagnostic, not a substitute for scenario quality.
+
+CI should also add dependency-vulnerability scanning, secret scanning, model-checksum verification, and license inventory once dependencies and model artifacts are introduced.
 
 ## 15. Milestone Test Report Template
 

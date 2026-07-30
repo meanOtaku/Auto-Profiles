@@ -2,15 +2,17 @@
 
 ## 1. Language and Version
 
-Use Python 3.11 or 3.12 according to the repository configuration. Do not use features unavailable in the selected minimum version.
+Use Python 3.11 as the minimum language version. Python 3.12 may be supported through the CI matrix, but code must remain compatible with Python 3.11 until an explicit migration changes the minimum version.
 
 ## 2. Style and Tooling
 
 Use:
 
 - Ruff for formatting and linting
-- mypy or the configured type checker
+- mypy as the type checker
 - pytest for tests
+
+Dependencies must be reproducibly locked using the package-management workflow selected in `pyproject.toml`. Model artifacts are dependencies and must be pinned by version and checksum.
 
 The repository configuration is the source of truth.
 
@@ -146,6 +148,9 @@ Use UUIDs for profiles, candidates, events, and persistent embeddings. Temporary
 - Guard profile promotion and merge operations with transactions.
 - Make shutdown cooperative and deterministic.
 - Do not allow stale frames to accumulate indefinitely.
+- Do not perform model inference or blocking camera/OS calls directly on the API event loop.
+- Define queue capacity, overflow policy, cancellation behavior, and shutdown ownership.
+- Durable domain events must not be dropped when transient frame telemetry is discarded.
 
 ## 16. File and Path Handling
 
@@ -159,12 +164,28 @@ Use `pathlib.Path`. Keep runtime data outside source directories. Never assume t
 - Use pagination for potentially large collections.
 - Use idempotent semantics where appropriate.
 - Protect destructive operations.
+- Version public routes under `/api/v1`.
+- Require authentication and authorization for non-loopback deployments.
+- Fail startup when exposed beyond loopback without production security configuration.
+- Define idempotency and optimistic concurrency for retryable state-changing operations.
+- Apply request-size limits, rate limits, and sanitized error responses.
 
-## 18. Documentation
+## 18. Security, Privacy, and Supply Chain
+
+- Never persist permanent biometric data without the configured encryption-at-rest protection.
+- Never include image arrays or embedding values in `repr`, exceptions, traces, metrics, or logs.
+- Keep encryption keys separate from encrypted data.
+- Verify model and fixture checksums before use.
+- Record third-party dependency and model licenses.
+- Run dependency vulnerability and secret scans in CI.
+- Treat exports, temporary files, database sidecars, and backups as sensitive data.
+- Domain modules must not read secrets or environment variables directly; configuration boundaries provide validated values.
+
+## 19. Documentation
 
 Every public module, class, and non-obvious function should explain intent, not restate code. Complex thresholds and policy decisions require rationale.
 
-## 19. Comments
+## 20. Comments
 
 Use comments for:
 
@@ -175,7 +196,7 @@ Use comments for:
 
 Do not leave commented-out code.
 
-## 20. Prohibited Patterns
+## 21. Prohibited Patterns
 
 Do not:
 
@@ -187,3 +208,6 @@ Do not:
 - Use real cameras in unit tests
 - Add silent fallbacks that change recognition behavior
 - Claim state transitions without emitting or logging them
+- Enable automatic candidate promotion without verified consent, liveness, retention, and security gates
+- Expose administrative APIs beyond loopback without authentication and authorization
+- Load unverified model artifacts
