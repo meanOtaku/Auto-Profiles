@@ -111,6 +111,17 @@ class DetectionConfig(StrictModel):
         return self
 
 
+class TrackingConfig(StrictModel):
+    """Bounded, in-memory geometric tracking controls."""
+
+    enabled: bool = False
+    max_missing_frames: int = Field(default=5, ge=0, le=1_000)
+    min_iou: float = Field(default=0.1, ge=0.0, le=1.0)
+    max_center_distance: float = Field(default=2.0, gt=0.0, le=100.0)
+    max_samples_per_track: int = Field(default=20, ge=1, le=1_000)
+    max_tracks: int = Field(default=100, ge=1, le=10_000)
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -129,6 +140,7 @@ class AppConfig(StrictModel):
 
     camera: CameraConfig = CameraConfig()
     detection: DetectionConfig = DetectionConfig()
+    tracking: TrackingConfig = TrackingConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 

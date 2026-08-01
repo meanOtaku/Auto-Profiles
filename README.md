@@ -1,6 +1,15 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project is currently at **M2: Multi-Face Detection**; no identity recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M3 tracking implementation under verification**; no identity recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
+
+## M3 Tracking Addition
+
+- In-memory geometric tracker with process-local, non-reused temporary IDs.
+- Deterministic association requiring both predicted-centroid and IoU gates.
+- Strict single-source, monotonically increasing frame-sequence boundary.
+- Configurable bounded occlusion expiry, active-track count, and metadata-only sample retention.
+- No retained pixels, crops, embeddings, profile IDs, persistence, recognition, or settings behavior.
+- M3 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M2 Capabilities
 

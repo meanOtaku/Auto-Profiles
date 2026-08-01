@@ -93,6 +93,8 @@ M2 defines an immutable, profile-independent `FaceDetector` boundary. `FaceDetec
 
 No detector model is bundled or selected as a production default in M2. The factory reads an explicitly configured local artifact once, verifies that exact byte buffer against its SHA-256, and passes the verified buffer directly to OpenCV, preserving both the integrity boundary and M5 provenance decision gate. Debug rendering copies the frame, draws only the M2 metadata, and persists only through the explicit private frame-output boundary.
 
+M3 adds an in-memory `FaceTracker` boundary that wraps immutable M2 detections in `TrackedFace` results rather than modifying detection contracts. `GeometricFaceTracker` assigns process-local, non-reused temporary integer IDs for one frame source. It associates detections only when they satisfy both predicted-centroid and IoU gates, expires tracks after a configured bounded gap, and retains only a hard-bounded sequence of timestamps, boxes, and confidence values. `create_tracker()` enforces the disabled-by-default configuration boundary. It retains no pixels, crops, landmarks, embeddings, profile IDs, or durable state. Geometric continuity is not identity proof; quality, embeddings, recognition, persistence, and active-user behavior remain in later milestones.
+
 ### 4.3 Profile Domain
 
 Responsibilities:

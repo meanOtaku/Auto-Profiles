@@ -16,6 +16,15 @@ detection:
   nms_threshold: 0.3
   top_k: 5000
 
+tracking:
+  # M3 tracking is in-memory, geometric, and disabled until explicitly enabled.
+  enabled: false
+  max_missing_frames: 5
+  min_iou: 0.1
+  max_center_distance: 2.0
+  max_samples_per_track: 20
+  max_tracks: 100
+
 logging:
   level: INFO
 
