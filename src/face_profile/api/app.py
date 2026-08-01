@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from face_profile.api.rate_limit import RateLimiter
 from face_profile.api.routes import router
@@ -38,6 +39,8 @@ from face_profile.vision.embedding import create_embedding_generator
 from face_profile.vision.factory import create_face_detector
 from face_profile.vision.quality import create_quality_evaluator
 from face_profile.vision.tracking import create_tracker
+
+_DASHBOARD_HTML_PATH = Path(__file__).resolve().parent.parent / "ui" / "dashboard.html"
 
 
 def create_app(config: AppConfig) -> FastAPI:
@@ -107,6 +110,14 @@ def create_app(config: AppConfig) -> FastAPI:
         return await call_next(request)
 
     app.include_router(router)
+
+    if config.ui.enabled:
+        dashboard_html = _DASHBOARD_HTML_PATH.read_text(encoding="utf-8")
+
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+        async def dashboard() -> str:
+            return dashboard_html
+
     return app
 
 

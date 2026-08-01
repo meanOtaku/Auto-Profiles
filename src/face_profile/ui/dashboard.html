@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Face Profile Dashboard (M13)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; }
+  section { margin-bottom: 2rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; }
+  button { cursor: pointer; }
+  #token { width: 24rem; }
+  .muted { color: #666; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>Face Profile Dashboard</h1>
+<p class="muted">
+  This page is a plain API client: every action below calls the versioned
+  <code>/api/v1</code> REST API directly. It contains no recognition, profile,
+  enrollment, or active-user decision logic of its own (HERMES.md's UI rule).
+  Closing this page has no effect on the running service.
+</p>
+
+<section>
+  <label>Bearer token (kept only in this page's memory, never stored): </label>
+  <input id="token" type="password" placeholder="paste API auth_token if configured">
+  <button onclick="refreshAll()">Connect / Refresh</button>
+  <span id="health-status" class="muted"></span>
+</section>
+
+<section>
+  <h2>Profiles</h2>
+  <table id="profiles-table"><thead><tr>
+    <th>Display name</th><th>Status</th><th>Priority</th><th>Version</th><th>Actions</th>
+  </tr></thead><tbody></tbody></table>
+</section>
+
+<section>
+  <h2>Candidates</h2>
+  <table id="candidates-table"><thead><tr>
+    <th>Temporary name</th><th>Status</th><th>Samples</th><th>Actions</th>
+  </tr></thead><tbody></tbody></table>
+</section>
+
+<section>
+  <h2>Recent events</h2>
+  <table id="events-table"><thead><tr>
+    <th>Sequence</th><th>Type</th><th>Profile</th><th>Occurred at</th>
+  </tr></thead><tbody></tbody></table>
+</section>
+
+<script>
+function authHeaders() {
+  const token = document.getElementById('token').value;
+  return token ? { 'Authorization': 'Bearer ' + token } : {};
+}
+
+async function apiGet(path) {
+  const response = await fetch(path, { headers: authHeaders() });
+  if (!response.ok) throw new Error(path + ' -> ' + response.status);
+  return response.json();
+}
+
+async function apiPost(path, body) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!response.ok) throw new Error(path + ' -> ' + response.status);
+  return response.json();
+}
+
+async function approveCandidate(id) {
+  const reviewedBy = prompt('Reviewer name for approval:');
+  if (!reviewedBy) return;
+  await apiPost(`/api/v1/candidates/${id}/approve`, { reviewed_by: reviewedBy });
+  await refreshAll();
+}
+
+async function rejectCandidate(id) {
+  const reason = prompt('Rejection reason:');
+  if (!reason) return;
+  await apiPost(`/api/v1/candidates/${id}/reject`, { reason: reason });
+  await refreshAll();
+}
+
+async function refreshAll() {
+  const statusEl = document.getElementById('health-status');
+  try {
+    await apiGet('/api/v1/health');
+    statusEl.textContent = 'connected';
+  } catch (error) {
+    statusEl.textContent = 'unreachable: ' + error;
+    return;
+  }
+
+  try {
+    const profiles = await apiGet('/api/v1/profiles');
+    const tbody = document.querySelector('#profiles-table tbody');
+    tbody.innerHTML = '';
+    for (const p of profiles.items) {
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${p.display_name}</td><td>${p.status}</td><td>${p.priority}</td><td>${p.optimistic_version}</td><td></td>`;
+      tbody.appendChild(row);
+    }
+  } catch (error) { /* API/database may be disabled; leave table empty */ }
+
+  try {
+    const candidates = await apiGet('/api/v1/candidates');
+    const tbody = document.querySelector('#candidates-table tbody');
+    tbody.innerHTML = '';
+    for (const c of candidates.items) {
+      const row = document.createElement('tr');
+      const actions = document.createElement('td');
+      const approveBtn = document.createElement('button');
+      approveBtn.textContent = 'Approve';
+      approveBtn.onclick = () => approveCandidate(c.id);
+      const rejectBtn = document.createElement('button');
+      rejectBtn.textContent = 'Reject';
+      rejectBtn.onclick = () => rejectCandidate(c.id);
+      actions.append(approveBtn, rejectBtn);
+      row.innerHTML = `<td>${c.temporary_name}</td><td>${c.status}</td><td>${c.sample_count}</td>`;
+      row.appendChild(actions);
+      tbody.appendChild(row);
+    }
+  } catch (error) { /* enrollment may be disabled */ }
+
+  try {
+    const events = await apiGet('/api/v1/events');
+    const tbody = document.querySelector('#events-table tbody');
+    tbody.innerHTML = '';
+    for (const e of events.items) {
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${e.sequence}</td><td>${e.event_type}</td><td>${e.profile_id || ''}</td><td>${e.occurred_at}</td>`;
+      tbody.appendChild(row);
+    }
+  } catch (error) { /* database may be disabled */ }
+}
+</script>
+</body>
+</html>

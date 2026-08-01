@@ -142,6 +142,11 @@ api:
   events_page_size: 50
   worker_poll_interval_seconds: 0.1
 
+ui:
+  # M13 optional dashboard is disabled by default; it is a pure API
+  # client with no domain logic of its own. See docs/reports/M13.md.
+  enabled: false
+
 logging:
   level: INFO
 

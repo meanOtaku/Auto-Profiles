@@ -302,6 +302,12 @@ class APIConfig(StrictModel):
         return self
 
 
+class UIConfig(StrictModel):
+    """M13 optional dashboard: a static page served by the M12 API, disabled by default."""
+
+    enabled: bool = False
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -336,6 +342,7 @@ class AppConfig(StrictModel):
     active_user: ActiveUserConfig = ActiveUserConfig()
     preference_learning: PreferenceLearningConfig = PreferenceLearningConfig()
     api: APIConfig = APIConfig()
+    ui: UIConfig = UIConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 
