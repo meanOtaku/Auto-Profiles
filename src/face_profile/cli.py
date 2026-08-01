@@ -8,10 +8,18 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import TextIO
+from uuid import UUID
 
 from face_profile.camera import ImageFrameSource, save_frame
 from face_profile.camera.factory import create_frame_source
 from face_profile.config import AppConfig, ConfigurationError, load_config
+from face_profile.database.factory import create_profile_database
+from face_profile.database.models import Profile, ProfileStatus
+from face_profile.database.repository import (
+    ConcurrencyConflictError,
+    ProfileNotFoundError,
+    ProfileRepositoryError,
+)
 from face_profile.logging import configure_logging
 from face_profile.service import Service
 from face_profile.settings import DeviceSettings, MockSettingsAdapter
@@ -49,6 +57,24 @@ def _parser() -> argparse.ArgumentParser:
     evaluate_threshold = commands.add_parser("evaluate-threshold")
     evaluate_threshold.add_argument("--pairs", type=Path, required=True)
     evaluate_threshold.add_argument("--thresholds", type=str, default=None)
+    profile = commands.add_parser("profile")
+    profile_commands = profile.add_subparsers(dest="profile_command", required=True)
+    profile_create = profile_commands.add_parser("create")
+    profile_create.add_argument("--display-name", required=True)
+    profile_create.add_argument("--owner", action="store_true")
+    profile_create.add_argument("--priority", type=int, default=0)
+    profile_list = profile_commands.add_parser("list")
+    profile_list.add_argument("--status", choices=[status.value for status in ProfileStatus])
+    profile_show = profile_commands.add_parser("show")
+    profile_show.add_argument("--id", required=True)
+    profile_delete = profile_commands.add_parser("delete")
+    profile_delete.add_argument("--id", required=True)
+    profile_delete.add_argument("--expected-version", type=int, required=True)
+    profile_merge = profile_commands.add_parser("merge")
+    profile_merge.add_argument("--source-id", required=True)
+    profile_merge.add_argument("--target-id", required=True)
+    profile_merge.add_argument("--source-expected-version", type=int, required=True)
+    profile_merge.add_argument("--target-expected-version", type=int, required=True)
     return parser
 
 
@@ -83,6 +109,20 @@ def _embed_one_image(
         raise _PipelineInputError("quality_rejected")
     aligned = aligner.align(frame, best)
     return embedder.generate(aligned)
+
+
+def _profile_to_json(profile: Profile) -> dict[str, object]:
+    return {
+        "id": str(profile.id),
+        "display_name": profile.display_name,
+        "status": profile.status.value,
+        "priority": profile.priority,
+        "is_owner": profile.is_owner,
+        "created_at": profile.created_at.isoformat(),
+        "updated_at": profile.updated_at.isoformat(),
+        "last_seen_at": profile.last_seen_at.isoformat() if profile.last_seen_at else None,
+        "optimistic_version": profile.optimistic_version,
+    }
 
 
 def _build_comparison_pipeline(
@@ -268,6 +308,99 @@ def main(
             extra={"event_type": "EvaluationCompleted", "pair_count": len(pairs)},
         )
         output.write(json.dumps(asdict(report), indent=2) + "\n")
+        return 0
+
+    if args.command == "profile":
+        database = create_profile_database(config.database)
+        if database is None:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "profile database is disabled",
+                extra={"event_type": "ProfileCommandFailed", "error_code": "database_disabled"},
+            )
+            return 3
+        try:
+            if args.profile_command == "create":
+                profile = database.profiles.create(
+                    display_name=args.display_name,
+                    is_owner=args.owner,
+                    priority=args.priority,
+                )
+                database.events.record(event_type="ProfileCreated", profile_id=profile.id)
+                logger.info(
+                    "profile created",
+                    extra={"event_type": "ProfileCreated", "profile_id": profile.id},
+                )
+                output.write(json.dumps(_profile_to_json(profile)) + "\n")
+            elif args.profile_command == "list":
+                status = ProfileStatus(args.status) if args.status else None
+                profiles = database.profiles.list(status=status)
+                logger.info("profiles listed", extra={"event_type": "ProfileListed"})
+                output.write(json.dumps([_profile_to_json(p) for p in profiles]) + "\n")
+            elif args.profile_command == "show":
+                profile = database.profiles.get(UUID(args.id))
+                output.write(json.dumps(_profile_to_json(profile)) + "\n")
+            elif args.profile_command == "delete":
+                profile = database.profiles.soft_delete(
+                    UUID(args.id),
+                    expected_version=args.expected_version,
+                    retention_days=config.database.retention_days,
+                )
+                database.events.record(event_type="ProfileDeleted", profile_id=profile.id)
+                logger.info(
+                    "profile deleted",
+                    extra={"event_type": "ProfileDeleted", "profile_id": profile.id},
+                )
+                output.write(json.dumps(_profile_to_json(profile)) + "\n")
+            else:
+                profile = database.profiles.merge(
+                    source_id=UUID(args.source_id),
+                    target_id=UUID(args.target_id),
+                    expected_source_version=args.source_expected_version,
+                    expected_target_version=args.target_expected_version,
+                )
+                database.events.record(event_type="ProfileMerged", profile_id=profile.id)
+                logger.info(
+                    "profiles merged",
+                    extra={"event_type": "ProfileMerged", "profile_id": profile.id},
+                )
+                output.write(json.dumps(_profile_to_json(profile)) + "\n")
+        except ValueError:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "profile identifier invalid",
+                extra={"event_type": "ProfileCommandFailed", "error_code": "invalid_identifier"},
+            )
+            database.close()
+            return 2
+        except ProfileNotFoundError:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "profile not found",
+                extra={"event_type": "ProfileCommandFailed", "error_code": "profile_not_found"},
+            )
+            database.close()
+            return 3
+        except ConcurrencyConflictError:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "profile concurrency conflict",
+                extra={"event_type": "ProfileCommandFailed", "error_code": "concurrency_conflict"},
+            )
+            database.close()
+            return 3
+        except ProfileRepositoryError:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "profile command failed",
+                extra={
+                    "event_type": "ProfileCommandFailed",
+                    "error_code": "profile_command_failed",
+                },
+            )
+            database.close()
+            return 3
+        database.close()
         return 0
 
     settings = MockSettingsAdapter(

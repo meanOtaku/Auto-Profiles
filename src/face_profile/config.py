@@ -180,6 +180,21 @@ class EmbeddingConfig(StrictModel):
         return self
 
 
+class DatabaseConfig(StrictModel):
+    """Encrypted, disabled-by-default persistent profile database configuration."""
+
+    enabled: bool = False
+    path: ConfigPath = Path("data/face_profile.sqlite3")
+    key_path: ConfigPath = Path("data/face_profile.key")
+    retention_days: int = Field(default=30, ge=1, le=3650)
+
+    @model_validator(mode="after")
+    def validate_paths(self) -> Self:
+        if self.path == self.key_path:
+            raise ValueError("database path and key path must differ")
+        return self
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -201,6 +216,7 @@ class AppConfig(StrictModel):
     tracking: TrackingConfig = TrackingConfig()
     quality: QualityConfig = QualityConfig()
     embedding: EmbeddingConfig = EmbeddingConfig()
+    database: DatabaseConfig = DatabaseConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 

@@ -1,6 +1,15 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M5 embeddings and similarity implementation under verification**; no identity recognition decisions, biometric persistence, network API, or real operating-system adapter is enabled yet.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M6 persistent profile database implementation under verification**; no identity recognition decisions, network API, or real operating-system adapter is enabled yet, and biometric persistence remains an explicit opt-in behind encryption.
+
+## M6 Persistent Profile Database Addition
+
+- Encrypted (AES-256-GCM), migrated SQLite profile/embedding/settings/event storage, disabled by default.
+- Embedding vectors are encrypted at the field level with a key stored separately from the database, both hardened to owner-only file permissions.
+- `ProfileRepository`: CRUD with optimistic concurrency, multiple embeddings per profile, atomic merge, retention-based soft delete/purge, and encrypted export/import.
+- `face-profile profile create|list|show|delete|merge` CLI, fails closed unless `database.enabled` is explicit.
+- A merge-time embedding decryption bug (AEAD associated data bound to the pre-merge profile ID) was found and fixed during this milestone's own smoke testing.
+- M6 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M5 Embeddings and Similarity Addition
 

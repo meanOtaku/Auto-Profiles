@@ -147,6 +147,8 @@ Responsibilities:
 - Embedding persistence
 - Settings persistence
 - Recognition-event persistence
+
+M6 implements this layer with the `database/` package: SQL migrations (`schema.py`) creating `profiles`, `face_embeddings`, `profile_settings`, and `recognition_events` in a `schema_version`-tracked SQLite database; field-level AES-256-GCM encryption of embedding vectors (`crypto.py`) with a separated local key file (`keys.py`); a hardened connection lifecycle (`connection.py`, `0700`/`0600` permissions, WAL, foreign keys); and typed repositories (`repository.py`) for profile CRUD with optimistic concurrency, embedding storage, atomic merge (including re-keying moved embeddings' AEAD associated data), retention-based soft delete/purge, and encrypted export/import. `candidates`/`candidate_embeddings` are deferred to M8. `create_profile_database()` follows the disabled-by-default factory pattern established since M1; the profile CLI fails closed with `database_disabled` otherwise. The domain layer depends only on these repository classes, never on SQL or the connection directly.
 - Migrations
 - Transactions
 

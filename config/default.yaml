@@ -60,6 +60,16 @@ embedding:
   similarity_threshold: 0.5
   similarity_margin: 0.05
 
+database:
+  # M6 persistent, encrypted profile storage is disabled by default. The key
+  # file must live outside version control and outside the database
+  # directory's backup scope in production; see docs/adr/0011-persistent-
+  # profile-database.md and docs/reports/M6.md before enabling.
+  enabled: false
+  path: data/face_profile.sqlite3
+  key_path: data/face_profile.key
+  retention_days: 30
+
 logging:
   level: INFO
 
