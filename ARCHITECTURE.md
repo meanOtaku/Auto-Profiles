@@ -132,7 +132,9 @@ Responsibilities:
 - Select the active profile
 - Prevent rapid active-profile switching
 
-M7 implements the per-track "confirm identity over time" piece with `recognition/cache.py`'s `RecognitionCache`: bounded, in-memory, per-track state that requires a configured run of consistent observations before confirming an identity, and stays sticky through transient unknown/ambiguous frames so a track's own identity does not flicker. This is distinct from M10's system-wide active-user selection, which chooses one active profile across multiple simultaneously-present, already-recognized tracks — a different, not-yet-implemented problem this milestone does not solve.
+M7 implements the per-track "confirm identity over time" piece with `recognition/cache.py`'s `RecognitionCache`: bounded, in-memory, per-track state that requires a configured run of consistent observations before confirming an identity, and stays sticky through transient unknown/ambiguous frames so a track's own identity does not flicker. This is distinct from M10's system-wide active-user selection, which chooses one active profile across multiple simultaneously-present, already-recognized tracks.
+
+M10 implements "select the active profile" and "prevent rapid active-profile switching" with `presence/active_user.py`'s `ActiveUserSelector`: a stateful policy scoring each `CONFIRMED_MATCH` track (`presence/builder.py`'s `build_presence_candidate()` excludes everything else) on the ARCHITECTURE §10 weighted formula, retaining the current active profile until a challenger exceeds `switch_margin` continuously for `stability_duration_seconds`, and further gating any switch behind a `switch_cooldown_seconds` cooldown. A `LEAVING` grace period absorbs a momentary disappearance of the active track before clearing to `NONE`.
 
 ### 4.5 Settings Domain
 

@@ -102,6 +102,24 @@ enrollment:
   near_frontal_max_yaw_asymmetry: 0.15
   candidate_retention_days: 7
 
+active_user:
+  # M10 active-user selection is disabled by default. Weights/margins are
+  # unevaluated starting points from ARCHITECTURE.md §10's suggested score;
+  # see docs/reports/M10.md before relying on them.
+  enabled: false
+  face_size_weight: 0.3
+  centre_weight: 0.2
+  duration_weight: 0.2
+  confidence_weight: 0.2
+  priority_weight: 0.1
+  duration_saturation_seconds: 5.0
+  priority_normalization_scale: 100.0
+  switch_margin: 0.1
+  stability_duration_seconds: 2.0
+  switch_cooldown_seconds: 5.0
+  min_visible_duration_seconds: 0.5
+  leaving_grace_seconds: 1.0
+
 logging:
   level: INFO
 

@@ -244,6 +244,24 @@ class EnrollmentConfig(StrictModel):
         return self
 
 
+class ActiveUserConfig(StrictModel):
+    """M10 active-user scoring, hysteresis, and switch-cooldown configuration."""
+
+    enabled: bool = False
+    face_size_weight: float = Field(default=0.3, ge=0.0, le=10.0)
+    centre_weight: float = Field(default=0.2, ge=0.0, le=10.0)
+    duration_weight: float = Field(default=0.2, ge=0.0, le=10.0)
+    confidence_weight: float = Field(default=0.2, ge=0.0, le=10.0)
+    priority_weight: float = Field(default=0.1, ge=0.0, le=10.0)
+    duration_saturation_seconds: float = Field(default=5.0, gt=0.0, le=600.0)
+    priority_normalization_scale: float = Field(default=100.0, gt=0.0, le=100_000.0)
+    switch_margin: float = Field(default=0.1, ge=0.0, le=10.0)
+    stability_duration_seconds: float = Field(default=2.0, gt=0.0, le=600.0)
+    switch_cooldown_seconds: float = Field(default=5.0, ge=0.0, le=600.0)
+    min_visible_duration_seconds: float = Field(default=0.5, ge=0.0, le=600.0)
+    leaving_grace_seconds: float = Field(default=1.0, ge=0.0, le=600.0)
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -275,6 +293,7 @@ class AppConfig(StrictModel):
     database: DatabaseConfig = DatabaseConfig()
     recognition: RecognitionConfig = RecognitionConfig()
     enrollment: EnrollmentConfig = EnrollmentConfig()
+    active_user: ActiveUserConfig = ActiveUserConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 

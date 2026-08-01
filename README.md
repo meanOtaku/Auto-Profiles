@@ -1,6 +1,15 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M9 settings abstraction and Linux platform adapter implementation under verification**; no active-user selection or network API is enabled yet, and biometric persistence, recognition, enrollment, and the real settings adapter all remain explicit opt-ins.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M10 active-user selection implementation under verification**; no network API is enabled yet, and biometric persistence, recognition, enrollment, the real settings adapter, and active-user selection all remain explicit opt-ins.
+
+## M10 Active-User Selection Addition
+
+- Weighted active-user scoring (face size, centre proximity, visible duration, recognition confidence, profile priority) over currently confirmed-recognized tracks only.
+- Hysteresis: the current active profile keeps control until a challenger exceeds the switch margin continuously for a configured stability duration.
+- A further switch cooldown blocks rapid re-switching even after a legitimate takeover.
+- A `LEAVING` grace period absorbs a momentary track disappearance before clearing to no active user.
+- A floating-point precision bug at the exact switch-margin boundary was found and fixed during this milestone's own smoke testing.
+- M10 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M9 Settings Abstraction and Platform Adapter Addition
 
