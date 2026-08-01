@@ -344,7 +344,7 @@ Includes M14–M15 plus security, privacy, packaging, and deployment review.
 | M1 | Camera sources | Complete | [M1 report](docs/reports/M1.md): 59 tests pass on Python 3.11.15 and 3.12.13; local quality, audit, packaging, privacy, secret-scanning, and independent-review gates passed on 2026-07-30. |
 | M2 | Multi-face detection | Complete | [M2 report](docs/reports/M2.md): 87 tests pass on Python 3.11.15 and 3.12.13; quality, model-integrity, privacy, audit, packaging, secret-scanning, and final independent-review gates passed on 2026-07-30. |
 | M3 | Tracking | Implementation drafted; verification deferred | [M3 report](docs/reports/M3.md): in-memory geometric tracking, temporary IDs, bounded metadata retention, and configuration were added on 2026-08-01. Automated tests and full quality gates were explicitly deferred by the owner and have not been claimed. |
-| M4 | Quality and alignment | Not started | |
+| M4 | Quality and alignment | Implementation drafted; verification deferred | [M4 report](docs/reports/M4.md): heuristic size/blur/exposure/pose/occlusion-proxy quality evaluator, ArcFace-template similarity alignment, and bounded per-track best-crop retention were added on 2026-08-01. Automated tests and full quality gates were explicitly deferred by the owner and have not been claimed. |
 | M5 | Embeddings and evaluation | Not started | |
 | M6 | Persistent profiles | Not started | |
 | M7 | Known-person recognition | Not started | |

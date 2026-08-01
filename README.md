@@ -1,6 +1,14 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M3 tracking implementation under verification**; no identity recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M4 quality-filtering and alignment implementation under verification**; no identity recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
+
+## M4 Quality Filtering and Alignment Addition
+
+- Heuristic size, sharpness, exposure, pose, and occlusion-proxy quality checks, each reporting a reason on rejection.
+- Similarity-transform alignment to the published InsightFace/ArcFace 112x112 five-point template.
+- Bounded, in-memory, per-track retention of the single best **accepted** crop; no disk persistence.
+- The occlusion check is a documented landmark-geometry heuristic, not a trained occlusion or anti-spoof model.
+- M4 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M3 Tracking Addition
 

@@ -25,6 +25,24 @@ tracking:
   max_samples_per_track: 20
   max_tracks: 100
 
+quality:
+  # M4 quality filtering and alignment are disabled until explicitly enabled.
+  # Thresholds are conservative heuristic starting points; they must be
+  # evaluated on local data before production use, per CODING_STANDARDS.md.
+  enabled: false
+  min_face_width: 40.0
+  min_face_height: 40.0
+  min_sharpness_variance: 60.0
+  min_mean_brightness: 40.0
+  max_mean_brightness: 215.0
+  max_overexposed_fraction: 0.15
+  max_roll_degrees: 25.0
+  max_yaw_asymmetry: 0.35
+  max_landmark_margin_violation: 0.05
+  aligned_output_width: 112
+  aligned_output_height: 112
+  best_sample_max_tracks: 100
+
 logging:
   level: INFO
 

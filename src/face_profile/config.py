@@ -122,6 +122,30 @@ class TrackingConfig(StrictModel):
     max_tracks: int = Field(default=100, ge=1, le=10_000)
 
 
+class QualityConfig(StrictModel):
+    """Quality-filtering and alignment thresholds for M4 crop acceptance."""
+
+    enabled: bool = False
+    min_face_width: float = Field(default=40.0, gt=0.0, le=10_000.0)
+    min_face_height: float = Field(default=40.0, gt=0.0, le=10_000.0)
+    min_sharpness_variance: float = Field(default=60.0, ge=0.0, le=100_000.0)
+    min_mean_brightness: float = Field(default=40.0, ge=0.0, le=255.0)
+    max_mean_brightness: float = Field(default=215.0, ge=0.0, le=255.0)
+    max_overexposed_fraction: float = Field(default=0.15, ge=0.0, le=1.0)
+    max_roll_degrees: float = Field(default=25.0, ge=0.0, le=90.0)
+    max_yaw_asymmetry: float = Field(default=0.35, ge=0.0, le=1.0)
+    max_landmark_margin_violation: float = Field(default=0.05, ge=0.0, le=1.0)
+    aligned_output_width: int = Field(default=112, ge=32, le=1024)
+    aligned_output_height: int = Field(default=112, ge=32, le=1024)
+    best_sample_max_tracks: int = Field(default=100, ge=1, le=10_000)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> Self:
+        if self.min_mean_brightness >= self.max_mean_brightness:
+            raise ValueError("min_mean_brightness must be less than max_mean_brightness")
+        return self
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -141,6 +165,7 @@ class AppConfig(StrictModel):
     camera: CameraConfig = CameraConfig()
     detection: DetectionConfig = DetectionConfig()
     tracking: TrackingConfig = TrackingConfig()
+    quality: QualityConfig = QualityConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 
