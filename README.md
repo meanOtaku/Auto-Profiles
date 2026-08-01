@@ -1,6 +1,15 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M6 persistent profile database implementation under verification**; no identity recognition decisions, network API, or real operating-system adapter is enabled yet, and biometric persistence remains an explicit opt-in behind encryption.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M7 known-person recognition implementation under verification**; no candidate enrollment, active-user selection, network API, or real operating-system adapter is enabled yet, and both biometric persistence and recognition remain explicit opt-ins.
+
+## M7 Known-Person Recognition Addition
+
+- Nearest-profile similarity search and a threshold/margin recognition decision (`UNKNOWN`/`AMBIGUOUS`/`POSSIBLE_MATCH`) over active profiles' stored embeddings.
+- A bounded, in-memory, per-track temporal-confirmation cache: a track's identity is only confirmed after repeated consistent observations, and stays sticky through a transient unknown/ambiguous frame so it does not flicker.
+- Multiple simultaneously visible tracks are recognized independently; unknown people never get promoted to a known identity.
+- `face-profile recognize --image PATH` CLI command.
+- Recognizer loading of every active profile's embeddings on every call is a known M15 performance follow-up, not silently accepted as production-ready.
+- M7 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M6 Persistent Profile Database Addition
 

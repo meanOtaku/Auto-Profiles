@@ -118,6 +118,8 @@ Entities:
 - RecognitionObservation
 - RecognitionDecision
 
+M7 implements the recognition-decision-aggregation half of this responsibility with `recognition/decision.py` and `recognition/matcher.py`: `find_nearest_profiles()` ranks each profile's best-similarity embedding against a query, and `decide()` applies the documented threshold/margin rule to produce a single-observation `RecognitionDecision`. `recognition/recognizer.py`'s `KnownPersonRecognizer` is the only M7 component that reads `ProfileRepository`, loading only `ACTIVE` profiles' embeddings. Candidate lifecycle, embedding ownership beyond storage, merge rules, and naming remain M6/M8 concerns this milestone does not touch.
+
 ### 4.4 Presence Domain
 
 Responsibilities:
@@ -127,6 +129,8 @@ Responsibilities:
 - Expire presence sessions
 - Select the active profile
 - Prevent rapid active-profile switching
+
+M7 implements the per-track "confirm identity over time" piece with `recognition/cache.py`'s `RecognitionCache`: bounded, in-memory, per-track state that requires a configured run of consistent observations before confirming an identity, and stays sticky through transient unknown/ambiguous frames so a track's own identity does not flicker. This is distinct from M10's system-wide active-user selection, which chooses one active profile across multiple simultaneously-present, already-recognized tracks — a different, not-yet-implemented problem this milestone does not solve.
 
 ### 4.5 Settings Domain
 

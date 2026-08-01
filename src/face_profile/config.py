@@ -195,6 +195,15 @@ class DatabaseConfig(StrictModel):
         return self
 
 
+class RecognitionConfig(StrictModel):
+    """Temporal-confirmation controls for M7 known-person recognition."""
+
+    enabled: bool = False
+    min_consistent_observations: int = Field(default=3, ge=1, le=100)
+    confirmation_window_seconds: float = Field(default=5.0, gt=0.0, le=600.0)
+    max_tracks: int = Field(default=100, ge=1, le=10_000)
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -217,6 +226,7 @@ class AppConfig(StrictModel):
     quality: QualityConfig = QualityConfig()
     embedding: EmbeddingConfig = EmbeddingConfig()
     database: DatabaseConfig = DatabaseConfig()
+    recognition: RecognitionConfig = RecognitionConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 

@@ -6,6 +6,7 @@ import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 from uuid import UUID
@@ -21,6 +22,7 @@ from face_profile.database.repository import (
     ProfileRepositoryError,
 )
 from face_profile.logging import configure_logging
+from face_profile.recognition.factory import create_recognizer
 from face_profile.service import Service
 from face_profile.settings import DeviceSettings, MockSettingsAdapter
 from face_profile.vision.alignment import AlignmentError, FaceAligner, create_aligner
@@ -75,6 +77,9 @@ def _parser() -> argparse.ArgumentParser:
     profile_merge.add_argument("--target-id", required=True)
     profile_merge.add_argument("--source-expected-version", type=int, required=True)
     profile_merge.add_argument("--target-expected-version", type=int, required=True)
+    recognize = commands.add_parser("recognize")
+    recognize.add_argument("--image", type=Path, required=True)
+    recognize.add_argument("--track-id", type=int, default=0)
     return parser
 
 
@@ -400,6 +405,83 @@ def main(
             )
             database.close()
             return 3
+        database.close()
+        return 0
+
+    if args.command == "recognize":
+        database = create_profile_database(config.database)
+        if database is None:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "recognition requires the profile database",
+                extra={"event_type": "RecognitionFailed", "error_code": "database_disabled"},
+            )
+            return 3
+        try:
+            pipeline = _build_comparison_pipeline(config)
+            recognizer = create_recognizer(config, database.profiles)
+        except (DetectionModelError, EmbeddingModelError):
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "recognition model startup failed",
+                extra={"event_type": "RecognitionFailed", "error_code": "model_unavailable"},
+            )
+            database.close()
+            return 3
+        if pipeline is None or recognizer is None:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "recognition is disabled",
+                extra={"event_type": "RecognitionFailed", "error_code": "recognition_disabled"},
+            )
+            database.close()
+            return 3
+        detector, quality_evaluator, aligner, embedder = pipeline
+        try:
+            embedding = _embed_one_image(
+                args.image,
+                detector=detector,
+                quality_evaluator=quality_evaluator,
+                aligner=aligner,
+                embedder=embedder,
+            )
+            decision = recognizer.recognize(args.track_id, embedding, observed_at=datetime.now(UTC))
+        except _PipelineInputError as error:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "recognition input rejected",
+                extra={"event_type": "RecognitionFailed", "error_code": error.error_code},
+            )
+            database.close()
+            return 3
+        except (DetectionError, AlignmentError, EmbeddingError):
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "recognition failed",
+                extra={"event_type": "RecognitionFailed", "error_code": "recognition_failed"},
+            )
+            database.close()
+            return 3
+        logger.info(
+            "recognition completed",
+            extra={
+                "event_type": "ProfileRecognized",
+                "state": decision.state.value,
+                "profile_id": decision.profile_id,
+            },
+        )
+        output.write(
+            json.dumps(
+                {
+                    "state": decision.state.value,
+                    "profile_id": str(decision.profile_id) if decision.profile_id else None,
+                    "similarity": decision.similarity,
+                    "second_best_similarity": decision.second_best_similarity,
+                    "reason": decision.reason,
+                }
+            )
+            + "\n"
+        )
         database.close()
         return 0
 

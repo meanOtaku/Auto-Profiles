@@ -70,6 +70,16 @@ database:
   key_path: data/face_profile.key
   retention_days: 30
 
+recognition:
+  # M7 known-person recognition is disabled by default. It additionally
+  # requires embedding.enabled, since it consumes the M5 similarity
+  # threshold/margin. Temporal-confirmation values are unevaluated starting
+  # points; see docs/reports/M7.md before relying on them.
+  enabled: false
+  min_consistent_observations: 3
+  confirmation_window_seconds: 5.0
+  max_tracks: 100
+
 logging:
   level: INFO
 
