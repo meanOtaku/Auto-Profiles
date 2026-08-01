@@ -10,8 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 authors = [{ name = "Vaibhav Bisht" }]
 dependencies = [
-  "cryptography==46.0.3",
-  "fastapi==0.121.2",
+  "cryptography==48.0.1",
+  "fastapi==0.133.0",
   "numpy==2.4.6",
   "opencv-python-headless==5.0.0.93",
   "pydantic==2.13.4",
