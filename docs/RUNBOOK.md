@@ -10,6 +10,27 @@ M2 uses CPython 3.11.15 and uv 0.11.32 as its exact baseline. CI also verifies C
 uv sync --locked --all-groups
 ```
 
+## Single-Command Launcher (`run.sh`)
+
+`./run.sh` at the repository root wraps the steps below for a fresh Ubuntu developer machine:
+
+1. Resolves the repository directory from the script's own location (via `readlink -f`), so it works regardless of the caller's current directory, and refuses to run if it isn't next to this project's `pyproject.toml`.
+2. Requires `uv`. If it is missing, the script prints the official installer command (`curl -LsSf https://astral.sh/uv/install.sh | sh`, a user-space install to `~/.local/bin` with no `sudo`, no `apt`, and no system configuration changes) and only runs it after explicit approval: an interactive `[y/N]` prompt, or a non-interactive `--install-uv` flag. It never installs uv silently.
+3. Runs `uv sync --locked --all-groups`.
+4. Resolves a config file: `--config PATH`, then the `FACE_PROFILE_CONFIG` environment variable, then the safe default `config/default.yaml`. Fails with a clear message if the resolved path does not exist.
+5. Forwards any remaining arguments to `face-profile` unchanged; with no arguments it runs `check`.
+
+```bash
+./run.sh                                             # safe hardware-free check (default.yaml: everything disabled/mock)
+./run.sh --help                                      # usage
+./run.sh detect --debug-output /tmp/out.png           # any face-profile subcommand, still config-gated
+./run.sh --config config/webcam-demo.yaml detect      # explicit opt-in to a local camera config (created by Webcam_demo.sh, or write your own — see below)
+./run.sh serve                                        # only starts if api.enabled is explicitly true in the config
+./run.sh --install-uv                                 # pre-approve bootstrapping uv non-interactively
+```
+
+`run.sh` never changes host settings or enables the camera, detector, database, recognition, enrollment, or API on its own — that only happens if the config file it is pointed at explicitly sets those fields, exactly as with the manual `uv run face-profile` invocation below. Use `Webcam_demo.sh` for a scripted, integrity-pinned local-webcam walkthrough, or hand `run.sh` your own `--config` for other local camera/API workflows.
+
 ## Validate Configuration and Lifecycle
 
 ```bash

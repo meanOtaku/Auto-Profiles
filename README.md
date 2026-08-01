@@ -134,6 +134,24 @@ A headless-first, local identity and device-personalization service built increm
 
 Exact baseline: CPython 3.11.15 and uv 0.11.32. CI also verifies CPython 3.12.13 compatibility. Project metadata accepts maintained CPython 3.11 and 3.12 patch releases, while the committed lockfile and exact development-tool pins make the verified toolchain reproducible.
 
+### One command, on a fresh Ubuntu machine
+
+```bash
+./run.sh
+```
+
+`run.sh` is a safe-by-default launcher: it locates the repository regardless of your current directory, requires `uv` (bootstrapping it only with your explicit, interactive approval — or non-interactively via `--install-uv` — using the official user-space installer; it never uses `sudo`/`apt` or touches system configuration), runs `uv sync --locked --all-groups`, and then runs the hardware-free `check` command against the fully-disabled `config/default.yaml`. It never accesses a camera, loads a detector/embedding model, opens the database, starts the API, or changes host audio/brightness settings unless the config file you point it at explicitly turns those on.
+
+```bash
+./run.sh --help                                     # usage and options
+./run.sh detect --debug-output /tmp/out.png          # any face-profile subcommand, still safe defaults
+./run.sh --config config/webcam-demo.yaml detect     # explicit opt-in to a local camera config you created (see docs/RUNBOOK.md)
+./run.sh serve                                       # only starts if api.enabled is explicitly true in the config
+./run.sh --install-uv                                # pre-approve bootstrapping uv non-interactively
+```
+
+### Manual equivalent
+
 ```bash
 uv sync --locked --all-groups
 uv run face-profile --config config/default.yaml check
@@ -141,7 +159,7 @@ uv run face-profile --config config/default.yaml check
 
 A successful check emits `ServiceStarted` and `ServiceStopped` JSON events and exits with status `0`. It does not access a camera or change host settings.
 
-The `detect` command requires both camera and detection configuration. The shipped defaults keep both disabled and mock-backed. See `docs/RUNBOOK.md` for a hardware-free example and integrity-pinned YuNet setup.
+The `detect` command requires both camera and detection configuration. The shipped defaults keep both disabled and mock-backed. See `docs/RUNBOOK.md` for a hardware-free example, a local webcam workflow, and integrity-pinned YuNet setup.
 
 ## Development Checks
 
@@ -157,6 +175,7 @@ uv build
 
 ## Repository Guide
 
+- `run.sh` — safe-by-default single-command launcher for a fresh Ubuntu machine
 - `HERMES.md` — primary implementation contract and milestone rules
 - `ARCHITECTURE.md` — components, boundaries, data flow, and runtime design
 - `ROADMAP.md` — milestone sequence and completion criteria
