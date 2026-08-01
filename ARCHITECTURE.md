@@ -149,6 +149,8 @@ Responsibilities:
 
 M9 implements the portable model, validation, and OS-adapter layers. `settings/__init__.py`'s `SettingsAdapter` protocol gains `capabilities()` (`AdapterCapabilities`/`CapabilityStatus`: available/unsupported/permission-denied) so gaps are reported explicitly rather than silently ignored. `settings/linux.py`'s `LinuxSettingsAdapter` is the one explicitly selected real adapter (ALSA `amixer` for volume, sysfs `/sys/class/backlight` for brightness), fully dependency-injected via `CommandRunner`/`BacklightAccessor` protocols so automated tests never touch real hardware; a partial apply (one setting succeeds, the other fails) triggers a best-effort rollback of the value that changed. `settings/rate_limit.py`'s `RateLimitedSettingsAdapter` wraps any adapter to reject rapid repeated applies and record self-applied values — the mechanism ARCHITECTURE.md §11 describes; M11 owns the attribution/debounce policy built on top of it. `settings/factory.create_settings_adapter()` always returns a working (at minimum mock) adapter, but only selects the real backend when `settings.backend: linux` is explicitly configured.
 
+M11 implements "debounce preference updates" and "prevent feedback loops" with `settings/preference_learning.py`'s `PreferenceLearner`, applying HERMES.md's four attribution rules (single active profile, minimum active duration, debounce stability, self-application suppression) before ever treating an observed device-setting value as a new user preference. `settings/last_used_service.py`'s `LastUsedPreferenceService` is the only M11 component that writes to M6, persisting an accepted change to `profile_settings` and a durable `SettingsChanged` event in one transaction.
+
 ### 4.6 Persistence Layer
 
 Responsibilities:

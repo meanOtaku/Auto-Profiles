@@ -120,6 +120,15 @@ active_user:
   min_visible_duration_seconds: 0.5
   leaving_grace_seconds: 1.0
 
+preference_learning:
+  # M11 last-used-preference learning is disabled by default. It requires
+  # active_user.enabled (attribution) and a real, non-mock settings adapter
+  # to observe anything meaningful; see docs/reports/M11.md and ADR 0016.
+  enabled: false
+  debounce_seconds: 3.0
+  min_active_duration_seconds: 2.0
+  self_application_tolerance_seconds: 2.0
+
 logging:
   level: INFO
 

@@ -1,6 +1,14 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M10 active-user selection implementation under verification**; no network API is enabled yet, and biometric persistence, recognition, enrollment, the real settings adapter, and active-user selection all remain explicit opt-ins.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M11 last-used preference persistence implementation under verification**; no network API is enabled yet, and biometric persistence, recognition, enrollment, the real settings adapter, active-user selection, and preference learning all remain explicit opt-ins.
+
+## M11 Last-Used Preference Persistence Addition
+
+- `PreferenceLearner` implements HERMES's four attribution rules: single active profile, minimum active duration, debounce stability, and self-application/feedback-loop suppression.
+- A profile switch always restarts debounce, so a value stable under one profile is never silently credited to another.
+- `LastUsedPreferenceService` persists an accepted stable change to the active profile's settings and records a durable `SettingsChanged` audit event, in one transaction — verified end-to-end against a real temporary M6 database.
+- No scheduled polling loop exists yet; `observe()` is called on demand pending M12's daemon worker loop.
+- M11 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M10 Active-User Selection Addition
 

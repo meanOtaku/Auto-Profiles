@@ -262,6 +262,15 @@ class ActiveUserConfig(StrictModel):
     leaving_grace_seconds: float = Field(default=1.0, ge=0.0, le=600.0)
 
 
+class PreferenceLearningConfig(StrictModel):
+    """M11 last-used-preference attribution and debounce configuration."""
+
+    enabled: bool = False
+    debounce_seconds: float = Field(default=3.0, gt=0.0, le=600.0)
+    min_active_duration_seconds: float = Field(default=2.0, ge=0.0, le=600.0)
+    self_application_tolerance_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -294,6 +303,7 @@ class AppConfig(StrictModel):
     recognition: RecognitionConfig = RecognitionConfig()
     enrollment: EnrollmentConfig = EnrollmentConfig()
     active_user: ActiveUserConfig = ActiveUserConfig()
+    preference_learning: PreferenceLearningConfig = PreferenceLearningConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 
