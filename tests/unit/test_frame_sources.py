@@ -497,3 +497,89 @@ def test_webcam_source_bounds_retries_and_reports_degraded_health() -> None:
     assert source.health.temporary_failures == 2
     assert source.health.last_error_code == "temporary_read_failure"
     source.close()
+
+
+class _NeverOpensCapture:
+    def isOpened(self) -> bool:
+        return False
+
+    def read(self) -> tuple[bool, None]:
+        return False, None
+
+    def release(self) -> None:
+        pass
+
+    def get(self, _property_id: int) -> float:
+        return 0.0
+
+
+def test_webcam_source_open_failure_includes_actionable_diagnostic_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from face_profile import camera as camera_module
+    from face_profile.camera import CameraStatus, FrameSourceError, WebcamFrameSource
+    from face_profile.camera.diagnostics import WebcamDiagnostics
+
+    monkeypatch.setattr(
+        camera_module,
+        "diagnose_webcam",
+        lambda device_index: WebcamDiagnostics(
+            device_path=f"/dev/video{device_index}",
+            device_exists=False,
+            permission_ok=None,
+            hint="does not exist -- plug in the camera and check v4l2-ctl --list-devices",
+        ),
+    )
+
+    source = WebcamFrameSource(5, capture_factory=lambda _device_index: _NeverOpensCapture())
+
+    with pytest.raises(FrameSourceError, match="does not exist -- plug in the camera"):
+        source.open()
+    _assert_status(source.health.status, CameraStatus.FAILED)
+    assert source.health.last_error_code == "open_failed"
+
+
+def test_webcam_default_capture_factory_pins_v4l2_backend_on_linux(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import platform
+
+    import cv2
+
+    from face_profile.camera import WebcamFrameSource
+
+    calls: list[tuple[int, ...]] = []
+
+    def fake_video_capture(*args: int) -> _NeverOpensCapture:
+        calls.append(tuple(args))
+        return _NeverOpensCapture()
+
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(cv2, "VideoCapture", fake_video_capture)
+
+    WebcamFrameSource._default_capture_factory(2)
+
+    assert calls == [(2, cv2.CAP_V4L2)]
+
+
+def test_webcam_default_capture_factory_omits_backend_hint_off_linux(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import platform
+
+    import cv2
+
+    from face_profile.camera import WebcamFrameSource
+
+    calls: list[tuple[int, ...]] = []
+
+    def fake_video_capture(*args: int) -> _NeverOpensCapture:
+        calls.append(tuple(args))
+        return _NeverOpensCapture()
+
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(cv2, "VideoCapture", fake_video_capture)
+
+    WebcamFrameSource._default_capture_factory(0)
+
+    assert calls == [(0,)]

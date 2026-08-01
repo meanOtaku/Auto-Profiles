@@ -1,6 +1,7 @@
 """Camera boundary types and deterministic test adapter."""
 
 import os
+import platform
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -12,6 +13,8 @@ from typing import Protocol, TypeAlias, cast
 import cv2
 import numpy as np
 from numpy.typing import NDArray
+
+from face_profile.camera.diagnostics import diagnose_webcam
 
 ImageArray: TypeAlias = NDArray[np.uint8]
 
@@ -345,6 +348,14 @@ class WebcamFrameSource:
 
     @staticmethod
     def _default_capture_factory(device_index: int) -> CaptureDevice:
+        if platform.system() == "Linux":
+            # Ask for V4L2 explicitly rather than OpenCV's default backend
+            # auto-detection: on embedded/aarch64 Linux (e.g. Jetson JetPack
+            # Ubuntu), a USB UVC webcam is a V4L2 device and pinning the
+            # backend avoids ambiguity if other video I/O backends are
+            # present but not applicable (e.g. GStreamer pipelines meant for
+            # CSI cameras, not USB webcams).
+            return cast(CaptureDevice, cv2.VideoCapture(device_index, cv2.CAP_V4L2))
         return cast(CaptureDevice, cv2.VideoCapture(device_index))
 
     def _connect(self) -> None:
@@ -367,7 +378,10 @@ class WebcamFrameSource:
             self._capture = None
             self._status = CameraStatus.FAILED
             self._last_error_code = "open_failed"
-            raise FrameSourceError(f"unable to open webcam source: {self._device_index}")
+            diagnostics = diagnose_webcam(self._device_index)
+            raise FrameSourceError(
+                f"unable to open webcam source: {self._device_index} ({diagnostics.hint})"
+            )
         self._capture = capture
 
     def open(self) -> None:

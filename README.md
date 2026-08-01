@@ -135,7 +135,10 @@ A headless-first, local identity and device-personalization service built increm
 Exact baseline: CPython 3.11.15 and uv 0.11.32. CI also verifies CPython 3.12.13 compatibility. Project metadata accepts maintained CPython 3.11 and 3.12 patch releases, while the committed lockfile and exact development-tool pins make the verified toolchain reproducible.
 
 See `docs/RUNNING_ON_UBUNTU.md` for a full walkthrough: baseline, clone, `run.sh`,
-CLI usage, private local configs, and every opt-in control.
+CLI usage, private local configs, and every opt-in control. Running on an NVIDIA
+Jetson (JetPack Ubuntu, aarch64) with a USB webcam? See `docs/RUNNING_ON_JETSON.md`
+for the platform-specific parts (Python toolchain, wheel availability, CPU-only
+inference, `/dev/video*` permissions) on top of that guide.
 
 ### One command, on a fresh Ubuntu machine
 
@@ -188,6 +191,7 @@ uv build
 - `docs/THREAT_MODEL.md` — security boundaries, threats, and required controls
 - `docs/RUNBOOK.md` — bootstrap, validation, and troubleshooting procedures
 - `docs/RUNNING_ON_UBUNTU.md` — end-to-end Ubuntu setup and opt-in guide
+- `docs/RUNNING_ON_JETSON.md` — NVIDIA Jetson (JetPack Ubuntu/aarch64) setup, webcam permissions, and diagnostics addendum
 - `docs/adr/` — accepted architectural decisions
 
 ## Safety and Privacy

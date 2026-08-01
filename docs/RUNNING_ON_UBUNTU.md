@@ -22,6 +22,10 @@ disabled until you explicitly opt in.
   maintained 3.11/3.12 patch release (`requires-python = ">=3.11,<3.13"`).
 - The committed `uv.lock` pins exact dependency versions so the toolchain is
   reproducible; always install with `--locked`.
+- On an NVIDIA Jetson (JetPack Ubuntu, aarch64), everything in this guide still
+  applies — see `docs/RUNNING_ON_JETSON.md` for the platform-specific addendum
+  (Python toolchain reality, dependency wheel availability, CPU-only inference,
+  `/dev/video*` permissions).
 
 ## 2. Clone the `alpha` branch
 
@@ -344,7 +348,11 @@ uv run face-profile --config data/local.yaml serve
   credentials in the file itself if you're going to commit it — see §5/§7.
 - **Camera unavailable**: for `image`/`video`, confirm `path` exists and is a
   supported file. For `webcam`, confirm `device_index`, host permissions, and that no
-  other process holds the device exclusively. Startup fails closed with exit `3`.
+  other process holds the device exclusively. Startup fails closed with exit `3`,
+  and the raised error message now includes a best-effort actionable hint (missing
+  `/dev/videoN`, permission gap, or device busy — see `docs/RUNNING_ON_JETSON.md` §3
+  and §7 for the full explanation and fixes, which apply on any Linux host, not just
+  Jetson).
 - **Detector unavailable**: confirm `detection.enabled`, `model_path` points at a real
   file, and `model_sha256` is the exact lowercase digest of that file's current bytes.
 - **`uv sync` / dependency drift**: run `uv lock --check`; if a dependency change is
