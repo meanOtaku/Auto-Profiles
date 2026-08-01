@@ -1,8 +1,10 @@
 # ADR 0011: Persistent Profile Database, Encryption, and Retention
 
-- Status: Accepted
+- Status: Accepted (amended)
 - Date: 2026-08-01
 - Decision milestone: M6
+
+> **Addendum (M8):** the per-call auto-commit behavior described for repository write methods below was removed during M8 to allow atomic multi-write promotion transactions. See ADR 0013 for the correction and its rationale.
 
 ## Context
 

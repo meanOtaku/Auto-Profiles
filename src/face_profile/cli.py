@@ -14,12 +14,24 @@ from uuid import UUID
 from face_profile.camera import ImageFrameSource, save_frame
 from face_profile.camera.factory import create_frame_source
 from face_profile.config import AppConfig, ConfigurationError, load_config
+from face_profile.database.candidate_repository import (
+    CandidateNotFoundError,
+    CandidateRepository,
+    CandidateStateError,
+)
 from face_profile.database.factory import create_profile_database
-from face_profile.database.models import Profile, ProfileStatus
+from face_profile.database.keys import LocalFileKeyProvider
+from face_profile.database.models import Candidate, CandidateStatus, Profile, ProfileStatus
 from face_profile.database.repository import (
     ConcurrencyConflictError,
     ProfileNotFoundError,
     ProfileRepositoryError,
+)
+from face_profile.enrollment.factory import create_candidate_promoter
+from face_profile.enrollment.promotion import (
+    CandidateNotReadyError,
+    DuplicateProfileError,
+    PromotionError,
 )
 from face_profile.logging import configure_logging
 from face_profile.recognition.factory import create_recognizer
@@ -80,6 +92,19 @@ def _parser() -> argparse.ArgumentParser:
     recognize = commands.add_parser("recognize")
     recognize.add_argument("--image", type=Path, required=True)
     recognize.add_argument("--track-id", type=int, default=0)
+    candidate = commands.add_parser("candidate")
+    candidate_commands = candidate.add_subparsers(dest="candidate_command", required=True)
+    candidate_list = candidate_commands.add_parser("list")
+    candidate_list.add_argument("--status", choices=[status.value for status in CandidateStatus])
+    candidate_show = candidate_commands.add_parser("show")
+    candidate_show.add_argument("--id", required=True)
+    candidate_approve = candidate_commands.add_parser("approve")
+    candidate_approve.add_argument("--id", required=True)
+    candidate_approve.add_argument("--reviewed-by", required=True)
+    candidate_reject = candidate_commands.add_parser("reject")
+    candidate_reject.add_argument("--id", required=True)
+    candidate_reject.add_argument("--reason", required=True)
+    candidate_reject.add_argument("--reviewed-by")
     return parser
 
 
@@ -127,6 +152,24 @@ def _profile_to_json(profile: Profile) -> dict[str, object]:
         "updated_at": profile.updated_at.isoformat(),
         "last_seen_at": profile.last_seen_at.isoformat() if profile.last_seen_at else None,
         "optimistic_version": profile.optimistic_version,
+    }
+
+
+def _candidate_to_json(candidate: Candidate) -> dict[str, object]:
+    return {
+        "id": str(candidate.id),
+        "temporary_name": candidate.temporary_name,
+        "status": candidate.status.value,
+        "first_seen_at": candidate.first_seen_at.isoformat(),
+        "last_seen_at": candidate.last_seen_at.isoformat(),
+        "sample_count": candidate.sample_count,
+        "aggregate_quality": candidate.aggregate_quality,
+        "review_status": candidate.review_status,
+        "reviewed_by": candidate.reviewed_by,
+        "reviewed_at": candidate.reviewed_at.isoformat() if candidate.reviewed_at else None,
+        "promoted_profile_id": (
+            str(candidate.promoted_profile_id) if candidate.promoted_profile_id else None
+        ),
     }
 
 
@@ -332,6 +375,7 @@ def main(
                     priority=args.priority,
                 )
                 database.events.record(event_type="ProfileCreated", profile_id=profile.id)
+                database.commit()
                 logger.info(
                     "profile created",
                     extra={"event_type": "ProfileCreated", "profile_id": profile.id},
@@ -352,6 +396,7 @@ def main(
                     retention_days=config.database.retention_days,
                 )
                 database.events.record(event_type="ProfileDeleted", profile_id=profile.id)
+                database.commit()
                 logger.info(
                     "profile deleted",
                     extra={"event_type": "ProfileDeleted", "profile_id": profile.id},
@@ -365,12 +410,14 @@ def main(
                     expected_target_version=args.target_expected_version,
                 )
                 database.events.record(event_type="ProfileMerged", profile_id=profile.id)
+                database.commit()
                 logger.info(
                     "profiles merged",
                     extra={"event_type": "ProfileMerged", "profile_id": profile.id},
                 )
                 output.write(json.dumps(_profile_to_json(profile)) + "\n")
         except ValueError:
+            database.rollback()
             configure_logging(level="ERROR", stream=error_output)
             logging.getLogger("face_profile.cli").error(
                 "profile identifier invalid",
@@ -379,6 +426,7 @@ def main(
             database.close()
             return 2
         except ProfileNotFoundError:
+            database.rollback()
             configure_logging(level="ERROR", stream=error_output)
             logging.getLogger("face_profile.cli").error(
                 "profile not found",
@@ -387,6 +435,7 @@ def main(
             database.close()
             return 3
         except ConcurrencyConflictError:
+            database.rollback()
             configure_logging(level="ERROR", stream=error_output)
             logging.getLogger("face_profile.cli").error(
                 "profile concurrency conflict",
@@ -395,12 +444,114 @@ def main(
             database.close()
             return 3
         except ProfileRepositoryError:
+            database.rollback()
             configure_logging(level="ERROR", stream=error_output)
             logging.getLogger("face_profile.cli").error(
                 "profile command failed",
                 extra={
                     "event_type": "ProfileCommandFailed",
                     "error_code": "profile_command_failed",
+                },
+            )
+            database.close()
+            return 3
+        database.close()
+        return 0
+
+    if args.command == "candidate":
+        database = create_profile_database(config.database)
+        if database is None or not config.enrollment.enabled:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "candidate review requires the profile database and enrollment",
+                extra={"event_type": "CandidateCommandFailed", "error_code": "enrollment_disabled"},
+            )
+            if database is not None:
+                database.close()
+            return 3
+        key_provider = LocalFileKeyProvider(config.database.key_path)
+        candidates = CandidateRepository(database.connection, key_provider=key_provider)
+        try:
+            if args.candidate_command == "list":
+                candidate_status = CandidateStatus(args.status) if args.status else None
+                found = candidates.list(status=candidate_status)
+                logger.info("candidates listed", extra={"event_type": "CandidateListed"})
+                output.write(json.dumps([_candidate_to_json(c) for c in found]) + "\n")
+            elif args.candidate_command == "show":
+                found_candidate = candidates.get(UUID(args.id))
+                output.write(json.dumps(_candidate_to_json(found_candidate)) + "\n")
+            elif args.candidate_command == "approve":
+                promoter = create_candidate_promoter(config, database)
+                if promoter is None:
+                    raise CandidateStateError("enrollment is disabled")
+                profile = promoter.promote(UUID(args.id), reviewed_by=args.reviewed_by)
+                logger.info(
+                    "candidate approved and promoted",
+                    extra={
+                        "event_type": "ProfileCreated",
+                        "profile_id": profile.id,
+                    },
+                )
+                output.write(json.dumps(_profile_to_json(profile)) + "\n")
+            else:
+                rejected_candidate = candidates.reject(
+                    UUID(args.id), reason=args.reason, reviewed_by=args.reviewed_by
+                )
+                database.commit()
+                logger.info(
+                    "candidate rejected",
+                    extra={"event_type": "CandidateUpdated", "state": "rejected"},
+                )
+                output.write(json.dumps(_candidate_to_json(rejected_candidate)) + "\n")
+        except ValueError:
+            database.rollback()
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "candidate identifier invalid",
+                extra={
+                    "event_type": "CandidateCommandFailed",
+                    "error_code": "invalid_identifier",
+                },
+            )
+            database.close()
+            return 2
+        except CandidateNotFoundError:
+            database.rollback()
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "candidate not found",
+                extra={
+                    "event_type": "CandidateCommandFailed",
+                    "error_code": "candidate_not_found",
+                },
+            )
+            database.close()
+            return 3
+        except CandidateNotReadyError:
+            database.rollback()
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "candidate is not ready for review",
+                extra={"event_type": "CandidateCommandFailed", "error_code": "not_ready"},
+            )
+            database.close()
+            return 3
+        except DuplicateProfileError:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "candidate matches an existing profile and was rejected",
+                extra={"event_type": "CandidateCommandFailed", "error_code": "duplicate_profile"},
+            )
+            database.close()
+            return 3
+        except (CandidateStateError, PromotionError):
+            database.rollback()
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "candidate command failed",
+                extra={
+                    "event_type": "CandidateCommandFailed",
+                    "error_code": "candidate_command_failed",
                 },
             )
             database.close()

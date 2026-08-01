@@ -1,6 +1,17 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M7 known-person recognition implementation under verification**; no candidate enrollment, active-user selection, network API, or real operating-system adapter is enabled yet, and both biometric persistence and recognition remain explicit opt-ins.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M8 candidate enrollment and owner-reviewed promotion implementation under verification**; no active-user selection, network API, or real operating-system adapter is enabled yet, and biometric persistence, recognition, and enrollment all remain explicit opt-ins.
+
+## M8 Candidate Enrollment and Review Addition
+
+- Temporary candidate lifecycle (`COLLECTING → {EXPIRED, REJECTED, READY_FOR_REVIEW} → PROMOTED`) with the same field-level encryption as permanent profiles.
+- Qualification gates: minimum samples/duration/quality, a near-frontal sample requirement, internal-consistency (mixed-identity) and temporal-variability (minimum spoof/replay) checks, and duplicate detection against both active profiles and other candidates.
+- A one-frame observation can never reach `READY_FOR_REVIEW`; rejected or expired candidates have their biometric samples deleted immediately.
+- Atomic, auditable, idempotent owner-reviewed promotion (`CandidatePromoter`), including a promotion-time duplicate re-check that defends against a matching profile appearing after a candidate qualified.
+- `automatic_promotion` is unconditionally rejected by configuration validation until M12/M14 deliver the required production security and liveness gates.
+- `face-profile candidate list|show|approve|reject` CLI.
+- A prerequisite defect in M6's repositories (auto-commit per call, incompatible with atomic multi-write promotion) was found and fixed during this milestone.
+- M8 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M7 Known-Person Recognition Addition
 

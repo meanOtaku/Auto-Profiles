@@ -110,6 +110,8 @@ Responsibilities:
 - Naming and metadata
 - Recognition-decision aggregation
 
+M8 implements candidate lifecycle with `database/candidate_repository.py`'s `CandidateRepository` (schema migration v2: `candidates`, `candidate_embeddings`, encrypted exactly like `face_embeddings`) and `enrollment/manager.py`'s `CandidateManager`, which maps each track to at most one in-flight candidate. `enrollment/qualification.py`'s pure `evaluate_candidate_qualification()` implements HERMES's unknown-person policy checks (sample count, duration, quality, near-frontal, internal consistency, temporal variability, duplicate-vs-profile, duplicate-vs-candidate) before a candidate may reach `READY_FOR_REVIEW`. `enrollment/promotion.py`'s `CandidatePromoter` is the atomic, auditable, idempotent promotion transaction, re-checking duplicates immediately before creating a profile. Automatic promotion is unconditionally rejected by configuration validation until M12/M14 deliver the required production gates.
+
 Entities:
 
 - Profile
@@ -152,7 +154,7 @@ Responsibilities:
 - Settings persistence
 - Recognition-event persistence
 
-M6 implements this layer with the `database/` package: SQL migrations (`schema.py`) creating `profiles`, `face_embeddings`, `profile_settings`, and `recognition_events` in a `schema_version`-tracked SQLite database; field-level AES-256-GCM encryption of embedding vectors (`crypto.py`) with a separated local key file (`keys.py`); a hardened connection lifecycle (`connection.py`, `0700`/`0600` permissions, WAL, foreign keys); and typed repositories (`repository.py`) for profile CRUD with optimistic concurrency, embedding storage, atomic merge (including re-keying moved embeddings' AEAD associated data), retention-based soft delete/purge, and encrypted export/import. `candidates`/`candidate_embeddings` are deferred to M8. `create_profile_database()` follows the disabled-by-default factory pattern established since M1; the profile CLI fails closed with `database_disabled` otherwise. The domain layer depends only on these repository classes, never on SQL or the connection directly.
+M6 implements this layer with the `database/` package: SQL migrations (`schema.py`) creating `profiles`, `face_embeddings`, `profile_settings`, and `recognition_events` in a `schema_version`-tracked SQLite database; field-level AES-256-GCM encryption of embedding vectors (`crypto.py`) with a separated local key file (`keys.py`); a hardened connection lifecycle (`connection.py`, `0700`/`0600` permissions, WAL, foreign keys); and typed repositories (`repository.py`) for profile CRUD with optimistic concurrency, embedding storage, atomic merge (including re-keying moved embeddings' AEAD associated data), retention-based soft delete/purge, and encrypted export/import. `create_profile_database()` follows the disabled-by-default factory pattern established since M1; the profile CLI fails closed with `database_disabled` otherwise. The domain layer depends only on these repository classes, never on SQL or the connection directly. Repository write methods do not commit their own transaction (an M8 correction, so multi-step operations like candidate promotion can compose several writes into one atomic commit); `merge()` and `import_profile()` remain self-committing since each is itself one atomic unit. Migration v2 (M8) adds `candidates`/`candidate_embeddings`.
 - Migrations
 - Transactions
 

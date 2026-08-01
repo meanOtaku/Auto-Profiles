@@ -4,6 +4,15 @@ M6 owns durable storage only. It does not decide identity (M7), enrollment
 policy (M8), active-user selection (M10), or apply settings to a real
 device (M9/M11). Domain services must depend on these repository classes
 rather than on SQL or the connection directly, per CODING_STANDARDS.md.
+
+Repository write methods do not commit their own transaction (an M8
+correction: the original M6 per-call auto-commit made these methods
+unusable as composable steps in a larger atomic operation, such as M8's
+candidate-promotion transaction). Callers own commit/rollback boundaries,
+typically via :meth:`ProfileDatabase.commit`/:meth:`ProfileDatabase.rollback`
+around one logical operation. ``merge()`` and ``import_profile()`` are
+themselves multi-statement atomic units, so they still manage their own
+commit/rollback internally.
 """
 
 from __future__ import annotations
@@ -124,7 +133,6 @@ class ProfileRepository:
                 "not_applicable",
             ),
         )
-        self._connection.commit()
         return self.get(profile_id)
 
     def get(self, profile_id: UUID) -> Profile:
@@ -198,7 +206,6 @@ class ProfileRepository:
         )
         if cursor.rowcount == 0:
             raise ConcurrencyConflictError("profile was modified concurrently")
-        self._connection.commit()
         return self.get(profile_id)
 
     def touch_last_seen(self, profile_id: UUID, *, seen_at: datetime | None = None) -> None:
@@ -211,7 +218,6 @@ class ProfileRepository:
         )
         if cursor.rowcount == 0:
             raise ProfileNotFoundError(str(profile_id))
-        self._connection.commit()
 
     def disable(self, profile_id: UUID, *, expected_version: int) -> Profile:
         """Set a profile's status to disabled."""
@@ -247,7 +253,6 @@ class ProfileRepository:
         )
         if cursor.rowcount == 0:
             raise ConcurrencyConflictError("profile was modified concurrently")
-        self._connection.commit()
         return self.get(profile_id)
 
     def purge_expired(self, *, now: datetime | None = None) -> int:
@@ -265,7 +270,6 @@ class ProfileRepository:
             "AND retention_expires_at <= ?",
             (ProfileStatus.DELETED.value, cutoff),
         )
-        self._connection.commit()
         return cursor.rowcount
 
     def merge(
@@ -280,7 +284,10 @@ class ProfileRepository:
 
         This is the mechanical repository operation only. Whether a merge is
         appropriate (deduplication policy, identity confidence) is an M7/M8
-        decision made before calling this method.
+        decision made before calling this method. Unlike other write
+        methods, ``merge`` is itself a multi-statement atomic unit, so it
+        commits on success and rolls back on failure rather than leaving
+        that to the caller.
         """
 
         if source_id == target_id:
@@ -380,7 +387,6 @@ class ProfileRepository:
                 now,
             ),
         )
-        self._connection.commit()
         return embedding_id
 
     def list_embeddings(self, profile_id: UUID) -> tuple[StoredEmbeddingMetadata, ...]:
@@ -438,7 +444,6 @@ class ProfileRepository:
         )
         if cursor.rowcount == 0:
             raise EmbeddingNotFoundError(str(embedding_id))
-        self._connection.commit()
 
     def export_profile(self, profile_id: UUID) -> bytes:
         """Return an encrypted, self-contained export blob for one profile."""
@@ -476,7 +481,9 @@ class ProfileRepository:
 
         A new UUID is always allocated on import to avoid colliding with an
         existing profile identifier; callers that need to link imported and
-        original identifiers must record that mapping themselves.
+        original identifiers must record that mapping themselves. Like
+        ``merge``, this composes multiple writes into one atomic unit, so it
+        manages its own commit/rollback.
         """
 
         key = self._key_provider.get_key()
@@ -487,28 +494,33 @@ class ProfileRepository:
             raise ProfileRepositoryError("export payload is not valid JSON") from error
         if payload.get("schema") != "face-profile-export-v1":
             raise ProfileRepositoryError("unsupported export schema")
-        profile = self.create(
-            display_name=payload["display_name"],
-            is_owner=bool(payload.get("is_owner", False)),
-            priority=int(payload.get("priority", 0)),
-            metadata=payload.get("metadata", {}),
-        )
-        for entry in payload.get("embeddings", []):
-            vector = np.asarray(entry["vector"], dtype=np.float32)
-            embedding = FaceEmbedding(
-                vector=vector,
-                model_name=entry["model_name"],
-                model_version=entry["model_version"],
-                model_checksum=entry["model_checksum"],
-                dimension=entry["dimension"],
-                numeric_dtype=entry["numeric_dtype"],
+        try:
+            profile = self.create(
+                display_name=payload["display_name"],
+                is_owner=bool(payload.get("is_owner", False)),
+                priority=int(payload.get("priority", 0)),
+                metadata=payload.get("metadata", {}),
             )
-            self.add_embedding(
-                profile.id,
-                embedding,
-                quality_score=entry["quality_score"],
-                is_representative=entry.get("is_representative", False),
-            )
+            for entry in payload.get("embeddings", []):
+                vector = np.asarray(entry["vector"], dtype=np.float32)
+                embedding = FaceEmbedding(
+                    vector=vector,
+                    model_name=entry["model_name"],
+                    model_version=entry["model_version"],
+                    model_checksum=entry["model_checksum"],
+                    dimension=entry["dimension"],
+                    numeric_dtype=entry["numeric_dtype"],
+                )
+                self.add_embedding(
+                    profile.id,
+                    embedding,
+                    quality_score=entry["quality_score"],
+                    is_representative=entry.get("is_representative", False),
+                )
+        except Exception:
+            self._connection.rollback()
+            raise
+        self._connection.commit()
         return self.get(profile.id)
 
 
@@ -542,7 +554,6 @@ class ProfileSettingsRepository:
             "brightness = excluded.brightness, updated_at = excluded.updated_at",
             (str(profile_id), settings.volume, settings.brightness, now),
         )
-        self._connection.commit()
 
 
 class RecognitionEventRepository:
@@ -590,7 +601,6 @@ class RecognitionEventRepository:
                 json.dumps(dict(metadata or {})),
             ),
         )
-        self._connection.commit()
         return event_id
 
     def list_recent(self, *, limit: int = 100) -> tuple[RecognitionEventRecord, ...]:
@@ -627,6 +637,16 @@ class ProfileDatabase:
     profiles: ProfileRepository
     settings: ProfileSettingsRepository
     events: RecognitionEventRepository
+
+    def commit(self) -> None:
+        """Commit the current transaction, covering every write since the last commit."""
+
+        self.connection.commit()
+
+    def rollback(self) -> None:
+        """Discard uncommitted writes since the last commit."""
+
+        self.connection.rollback()
 
     def close(self) -> None:
         """Close the underlying connection."""

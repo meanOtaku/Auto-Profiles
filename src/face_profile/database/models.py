@@ -54,6 +54,52 @@ class StoredEmbeddingMetadata:
     created_at: datetime
 
 
+class CandidateStatus(StrEnum):
+    """Lifecycle status for one temporary, unpromoted candidate."""
+
+    COLLECTING = "collecting"
+    EXPIRED = "expired"
+    REJECTED = "rejected"
+    READY_FOR_REVIEW = "ready_for_review"
+    PROMOTED = "promoted"
+
+
+@dataclass(frozen=True, slots=True)
+class Candidate:
+    """A temporary, unconfirmed person awaiting owner review or expiry."""
+
+    id: UUID
+    temporary_name: str
+    status: CandidateStatus
+    first_seen_at: datetime
+    last_seen_at: datetime
+    sample_count: int
+    aggregate_quality: float
+    review_status: str
+    reviewed_by: str | None
+    reviewed_at: datetime | None
+    retention_expires_at: datetime | None
+    promoted_profile_id: UUID | None
+    metadata: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class StoredCandidateEmbeddingMetadata:
+    """Non-secret metadata for one persisted candidate embedding."""
+
+    id: UUID
+    candidate_id: UUID
+    model_name: str
+    model_version: str
+    model_checksum: str
+    embedding_dimension: int
+    numeric_dtype: str
+    quality_score: float
+    source_camera_id: str | None
+    source_track_id: int | None
+    created_at: datetime
+
+
 @dataclass(frozen=True, slots=True)
 class RecognitionEventRecord:
     """One durable, append-only recognition-domain event."""

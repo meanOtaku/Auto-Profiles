@@ -80,6 +80,28 @@ recognition:
   confirmation_window_seconds: 5.0
   max_tracks: 100
 
+enrollment:
+  # M8 candidate enrollment is disabled by default. automatic_promotion
+  # must stay false: HERMES.md requires liveness, consent, retention, and
+  # API-security production gates before automatic promotion may run, and
+  # none of those exist yet (liveness is M14; API security is M12). See
+  # docs/reports/M8.md and ADR 0013.
+  enabled: false
+  automatic_promotion: false
+  minimum_samples: 5
+  minimum_observation_seconds: 3.0
+  minimum_quality: 0.65
+  candidate_expiry_seconds: 30.0
+  maximum_samples_per_candidate: 50
+  default_name_prefix: Unknown
+  minimum_internal_consistency: 0.5
+  maximum_internal_similarity: 0.9999
+  duplicate_profile_threshold: 0.5
+  duplicate_candidate_threshold: 0.5
+  near_frontal_max_roll_degrees: 12.0
+  near_frontal_max_yaw_asymmetry: 0.15
+  candidate_retention_days: 7
+
 logging:
   level: INFO
 
