@@ -43,6 +43,23 @@ quality:
   aligned_output_height: 112
   best_sample_max_tracks: 100
 
+embedding:
+  # M5 embedding generation is disabled and mock-backed until an
+  # integrity-pinned, provenance-reviewed ONNX model is explicitly
+  # configured. similarity_threshold/margin are unevaluated starting points;
+  # see docs/reports/M5.md and ADR 0010 before relying on them.
+  enabled: false
+  backend: mock
+  model_path: null
+  model_sha256: null
+  model_name: mock-content-hash
+  model_version: "1"
+  dimension: 128
+  input_width: 112
+  input_height: 112
+  similarity_threshold: 0.5
+  similarity_margin: 0.05
+
 logging:
   level: INFO
 

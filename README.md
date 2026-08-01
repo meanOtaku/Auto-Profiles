@@ -1,6 +1,15 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M4 quality-filtering and alignment implementation under verification**; no identity recognition, biometric persistence, network API, or real operating-system adapter is enabled yet.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M5 embeddings and similarity implementation under verification**; no identity recognition decisions, biometric persistence, network API, or real operating-system adapter is enabled yet.
+
+## M5 Embeddings and Similarity Addition
+
+- Normalized `FaceEmbedding` generation with a deterministic, model-free `MockEmbeddingGenerator` and an integrity-gated `OnnxEmbeddingGenerator` (OpenCV DNN, no new inference dependency).
+- `cosine_similarity()` that refuses to compare embeddings from incompatible models or dimensions.
+- A `threshold_evaluation` module and `evaluate-threshold` CLI command that compute FAR/FRR/EER and score statistics from a caller-supplied labeled pair dataset only — no fabricated accuracy evidence.
+- A `compare` CLI command running the full detect→quality→align→embed pipeline on two images.
+- No embedding model artifact is bundled; no approved biometric evaluation dataset exists in this repository.
+- M5 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M4 Quality Filtering and Alignment Addition
 

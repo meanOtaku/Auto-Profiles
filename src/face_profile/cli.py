@@ -1,20 +1,39 @@
 """Command-line entry point for the headless service foundation."""
 
 import argparse
+import json
 import logging
 import sys
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 from typing import TextIO
 
-from face_profile.camera import save_frame
+from face_profile.camera import ImageFrameSource, save_frame
 from face_profile.camera.factory import create_frame_source
-from face_profile.config import ConfigurationError, load_config
+from face_profile.config import AppConfig, ConfigurationError, load_config
 from face_profile.logging import configure_logging
 from face_profile.service import Service
 from face_profile.settings import DeviceSettings, MockSettingsAdapter
-from face_profile.vision.detection import DetectionError, render_detection_debug
+from face_profile.vision.alignment import AlignmentError, FaceAligner, create_aligner
+from face_profile.vision.detection import DetectionError, FaceDetector, render_detection_debug
+from face_profile.vision.embedding import (
+    EmbeddingError,
+    EmbeddingGenerator,
+    EmbeddingModelError,
+    FaceEmbedding,
+    cosine_similarity,
+    create_embedding_generator,
+)
 from face_profile.vision.factory import DetectionModelError, create_face_detector
+from face_profile.vision.quality import QualityEvaluator, create_quality_evaluator
+from face_profile.vision.threshold_evaluation import (
+    PairScore,
+    ThresholdEvaluationError,
+    evaluate_thresholds,
+)
+
+_DEFAULT_THRESHOLD_SWEEP = tuple(round(-1.0 + 0.05 * step, 2) for step in range(41))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -24,7 +43,58 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("check")
     detect = commands.add_parser("detect")
     detect.add_argument("--debug-output", type=Path)
+    compare = commands.add_parser("compare")
+    compare.add_argument("--image-a", type=Path, required=True)
+    compare.add_argument("--image-b", type=Path, required=True)
+    evaluate_threshold = commands.add_parser("evaluate-threshold")
+    evaluate_threshold.add_argument("--pairs", type=Path, required=True)
+    evaluate_threshold.add_argument("--thresholds", type=str, default=None)
     return parser
+
+
+class _PipelineInputError(ValueError):
+    """Raised when one image cannot produce an embedding for comparison."""
+
+    def __init__(self, error_code: str) -> None:
+        super().__init__(error_code)
+        self.error_code = error_code
+
+
+def _embed_one_image(
+    path: Path,
+    *,
+    detector: FaceDetector,
+    quality_evaluator: QualityEvaluator,
+    aligner: FaceAligner,
+    embedder: EmbeddingGenerator,
+) -> FaceEmbedding:
+    frame_source = ImageFrameSource(path)
+    frame_source.open()
+    try:
+        frame = frame_source.read()
+    finally:
+        frame_source.close()
+    detections = detector.detect(frame)
+    if len(detections) == 0:
+        raise _PipelineInputError("no_face_detected")
+    best = detections[0]
+    quality = quality_evaluator.evaluate(frame, best)
+    if not quality.accepted:
+        raise _PipelineInputError("quality_rejected")
+    aligned = aligner.align(frame, best)
+    return embedder.generate(aligned)
+
+
+def _build_comparison_pipeline(
+    config: AppConfig,
+) -> tuple[FaceDetector, QualityEvaluator, FaceAligner, EmbeddingGenerator] | None:
+    detector = create_face_detector(config.detection)
+    quality_evaluator = create_quality_evaluator(config.quality)
+    aligner = create_aligner(config.quality)
+    embedder = create_embedding_generator(config.embedding)
+    if detector is None or quality_evaluator is None or aligner is None or embedder is None:
+        return None
+    return detector, quality_evaluator, aligner, embedder
 
 
 def main(
@@ -105,6 +175,99 @@ def main(
             "face detection completed",
             extra={"event_type": "DetectionCompleted", "face_count": len(detections)},
         )
+        return 0
+
+    if args.command == "compare":
+        try:
+            pipeline = _build_comparison_pipeline(config)
+        except (DetectionModelError, EmbeddingModelError):
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "comparison model startup failed",
+                extra={"event_type": "ComparisonFailed", "error_code": "model_unavailable"},
+            )
+            return 3
+        if pipeline is None:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "comparison is disabled",
+                extra={"event_type": "ComparisonFailed", "error_code": "comparison_disabled"},
+            )
+            return 3
+        detector, quality_evaluator, aligner, embedder = pipeline
+        try:
+            embedding_a = _embed_one_image(
+                args.image_a,
+                detector=detector,
+                quality_evaluator=quality_evaluator,
+                aligner=aligner,
+                embedder=embedder,
+            )
+            embedding_b = _embed_one_image(
+                args.image_b,
+                detector=detector,
+                quality_evaluator=quality_evaluator,
+                aligner=aligner,
+                embedder=embedder,
+            )
+            similarity = cosine_similarity(embedding_a, embedding_b)
+        except _PipelineInputError as error:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "comparison input rejected",
+                extra={"event_type": "ComparisonFailed", "error_code": error.error_code},
+            )
+            return 3
+        except (DetectionError, AlignmentError, EmbeddingError):
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "comparison failed",
+                extra={"event_type": "ComparisonFailed", "error_code": "comparison_failed"},
+            )
+            return 3
+        logger.info(
+            "face comparison completed",
+            extra={"event_type": "ComparisonCompleted", "similarity": round(similarity, 6)},
+        )
+        output.write(json.dumps({"similarity": similarity}) + "\n")
+        return 0
+
+    if args.command == "evaluate-threshold":
+        try:
+            raw_pairs = json.loads(args.pairs.read_text(encoding="utf-8"))
+            pairs = tuple(
+                PairScore(
+                    similarity=float(entry["similarity"]),
+                    is_genuine=bool(entry["is_genuine"]),
+                    cohort=entry.get("cohort"),
+                )
+                for entry in raw_pairs
+            )
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "threshold evaluation input rejected",
+                extra={"event_type": "EvaluationFailed", "error_code": "invalid_pairs_file"},
+            )
+            return 2
+        if args.thresholds is not None:
+            thresholds = tuple(float(value) for value in args.thresholds.split(","))
+        else:
+            thresholds = _DEFAULT_THRESHOLD_SWEEP
+        try:
+            report = evaluate_thresholds(pairs, thresholds)
+        except ThresholdEvaluationError:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "threshold evaluation rejected",
+                extra={"event_type": "EvaluationFailed", "error_code": "invalid_dataset"},
+            )
+            return 2
+        logger.info(
+            "threshold evaluation completed",
+            extra={"event_type": "EvaluationCompleted", "pair_count": len(pairs)},
+        )
+        output.write(json.dumps(asdict(report), indent=2) + "\n")
         return 0
 
     settings = MockSettingsAdapter(

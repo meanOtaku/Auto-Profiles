@@ -146,6 +146,40 @@ class QualityConfig(StrictModel):
         return self
 
 
+class EmbeddingConfig(StrictModel):
+    """Embedding-generation and initial similarity threshold configuration."""
+
+    enabled: bool = False
+    backend: Literal["mock", "onnx"] = "mock"
+    model_path: ConfigPath | None = None
+    model_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    model_name: str = "mock-content-hash"
+    model_version: str = "1"
+    dimension: int = Field(default=128, ge=2, le=4096)
+    input_width: int = Field(default=112, ge=32, le=1024)
+    input_height: int = Field(default=112, ge=32, le=1024)
+    similarity_threshold: float = Field(default=0.5, ge=-1.0, le=1.0)
+    similarity_margin: float = Field(default=0.05, ge=0.0, le=2.0)
+
+    @model_validator(mode="after")
+    def validate_backend_fields(self) -> Self:
+        if self.backend == "onnx" and (self.model_path is None or self.model_sha256 is None):
+            raise ValueError("onnx embedding backend requires a model path and SHA-256")
+        if self.backend == "mock" and (
+            self.model_path is not None or self.model_sha256 is not None
+        ):
+            raise ValueError("mock embedding backend does not accept model configuration")
+        if self.backend == "mock" and (
+            self.model_name != "mock-content-hash"
+            or self.model_version != "1"
+            or self.dimension != 128
+            or self.input_width != 112
+            or self.input_height != 112
+        ):
+            raise ValueError("model identity and input-size fields are onnx-only controls")
+        return self
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -166,6 +200,7 @@ class AppConfig(StrictModel):
     detection: DetectionConfig = DetectionConfig()
     tracking: TrackingConfig = TrackingConfig()
     quality: QualityConfig = QualityConfig()
+    embedding: EmbeddingConfig = EmbeddingConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 
