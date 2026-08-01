@@ -69,6 +69,10 @@ database:
   path: data/face_profile.sqlite3
   key_path: data/face_profile.key
   retention_days: 30
+  # M15 storage limit: bounds unconstrained per-profile embedding growth.
+  # Matches enrollment.maximum_samples_per_candidate's default so a normal
+  # promotion is never silently truncated.
+  maximum_embeddings_per_profile: 50
 
 recognition:
   # M7 known-person recognition is disabled by default. It additionally
@@ -79,6 +83,9 @@ recognition:
   min_consistent_observations: 3
   confirmation_window_seconds: 5.0
   max_tracks: 100
+  # M15: amortizes the active-profile embedding decrypt cost across this
+  # interval instead of paying it on every recognize() call.
+  embedding_cache_refresh_seconds: 2.0
 
 enrollment:
   # M8 candidate enrollment is disabled by default. automatic_promotion
@@ -141,6 +148,12 @@ api:
   max_request_body_bytes: 1000000
   events_page_size: 50
   worker_poll_interval_seconds: 0.1
+  # M15 adaptive detection frequency: 1 = detect every frame (default,
+  # unchanged behavior). A value > 1 skips the detector on the other
+  # frames and only advances tracks by motion prediction; raise
+  # tracking.max_missing_frames accordingly or tracks may expire between
+  # detections. See docs/reports/M15.md and ADR 0020.
+  detection_interval_frames: 1
 
 ui:
   # M13 optional dashboard is disabled by default; it is a pure API

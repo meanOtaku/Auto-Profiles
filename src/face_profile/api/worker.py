@@ -52,6 +52,7 @@ class WorkerHealth:
 
     state: WorkerState
     frames_processed: int
+    frames_detected: int
     last_error: str | None
 
 
@@ -74,7 +75,10 @@ class PipelineWorker:
         passive_liveness_evaluator: PassiveLivenessEvaluator | None = None,
         profiles: ProfileRepository | None = None,
         poll_interval_seconds: float = 0.1,
+        detection_interval_frames: int = 1,
     ) -> None:
+        if detection_interval_frames < 1:
+            raise ValueError("detection_interval_frames must be positive")
         self._frame_source = frame_source
         self._detector = detector
         self._tracker = tracker
@@ -88,9 +92,11 @@ class PipelineWorker:
         self._passive_liveness_evaluator = passive_liveness_evaluator
         self._profiles = profiles
         self._poll_interval_seconds = poll_interval_seconds
+        self._detection_interval_frames = detection_interval_frames
 
         self._state = WorkerState.STOPPED
         self._frames_processed = 0
+        self._frames_detected = 0
         self._last_error: str | None = None
         self._pause_event = threading.Event()
         self._stop_event = threading.Event()
@@ -140,6 +146,7 @@ class PipelineWorker:
             return WorkerHealth(
                 state=self._state,
                 frames_processed=self._frames_processed,
+                frames_detected=self._frames_detected,
                 last_error=self._last_error,
             )
 
@@ -176,8 +183,22 @@ class PipelineWorker:
 
     def _process_one_frame(self) -> None:
         frame = self._frame_source.read()
-        detections = self._detector.detect(frame)
-        tracked_faces = self._tracker.update(frame, detections)
+        run_detection = self._frames_processed % self._detection_interval_frames == 0
+        if run_detection:
+            detections = self._detector.detect(frame)
+            tracked_faces = self._tracker.update(frame, detections)
+            with self._lock:
+                self._frames_detected += 1
+        else:
+            # M15 adaptive detection frequency: skip the (costly) detector
+            # on this frame and only advance track geometry by motion
+            # prediction. Predicted tracks are used for continuity only;
+            # per-track quality/recognition/enrollment work below still
+            # requires a real detection, so it is skipped this frame.
+            self._tracker.predict_only(frame)
+            with self._lock:
+                self._frames_processed += 1
+            return
         now = datetime.now(UTC)
 
         current_track_ids = {tracked.track_id for tracked in tracked_faces}

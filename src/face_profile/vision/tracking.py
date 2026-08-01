@@ -6,7 +6,7 @@ It retains only bounded geometric metadata; it never retains frame pixels, crops
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from math import hypot
@@ -57,6 +57,8 @@ class FaceTracker(Protocol):
     def update(
         self, frame: Frame, detections: tuple[FaceDetection, ...]
     ) -> tuple[TrackedFace, ...]: ...
+
+    def predict_only(self, frame: Frame) -> tuple[TrackedFace, ...]: ...
 
     def active_tracks(self) -> tuple[TrackedFace, ...]: ...
 
@@ -152,6 +154,42 @@ class GeometricFaceTracker:
         self._expire_tracks(frame.sequence)
         self._last_sequence = frame.sequence
         return tuple(sorted(visible, key=lambda tracked: tracked.track_id))
+
+    def predict_only(self, frame: Frame) -> tuple[TrackedFace, ...]:
+        """Advance every track's geometry by motion prediction, without detections.
+
+        M15's adaptive detection frequency uses this to skip the (costly)
+        detector on some frames while keeping tracks from expiring due to a
+        gap. The returned boxes are predicted, not observed: landmarks are
+        carried over unchanged from the last real detection and are
+        approximate. Callers must not feed a predicted result into
+        quality/alignment/embedding/recognition — those require a real
+        detection from :meth:`update`; predicted frames exist only for
+        track continuity and presence bookkeeping.
+        """
+
+        self._validate_frame(frame)
+        self._expire_tracks(frame.sequence)
+        visible: list[TrackedFace] = []
+        for track_id in sorted(self._tracks):
+            track = self._tracks[track_id]
+            predicted_box = _predicted_box(track, frame.sequence)
+            predicted_detection = replace(track.last_detection, bounding_box=predicted_box)
+            track.missed_frames += 1
+            track.state = TrackState.LOST
+            visible.append(
+                TrackedFace(
+                    track_id=track_id,
+                    detection=predicted_detection,
+                    state=track.state,
+                    age_frames=track.age_frames,
+                    missed_frames=track.missed_frames,
+                    samples=tuple(track.samples),
+                )
+            )
+        self._expire_tracks(frame.sequence)
+        self._last_sequence = frame.sequence
+        return tuple(visible)
 
     def active_tracks(self) -> tuple[TrackedFace, ...]:
         """Return privacy-minimized snapshots of tracks that have not ended."""

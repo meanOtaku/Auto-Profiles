@@ -1,6 +1,16 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M14 advanced liveness implementation under verification**; every capability (biometric persistence, recognition, enrollment, liveness, the real settings adapter, active-user selection, preference learning, the API/daemon, and the optional UI) remains an explicit opt-in.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. **All milestones M0–M15 have an implementation drafted on `alpha`, with verification (automated tests, real-hardware benchmarking, and real-dataset accuracy evaluation) explicitly deferred by the owner** — see each milestone's report under `docs/reports/` for exactly what was and was not verified. Every capability (biometric persistence, recognition, enrollment, liveness, the real settings adapter, active-user selection, preference learning, the API/daemon, and the optional UI) remains an explicit, disabled-by-default opt-in.
+
+## M15 Performance and Scale Addition
+
+- `ActiveProfileEmbeddingCache`: TTL-refreshed active-profile embeddings, amortizing M7's documented per-call decrypt cost instead of paying it every recognition.
+- Adaptive detection frequency: `GeometricFaceTracker.predict_only()` keeps tracks alive via motion prediction on frames where the detector is skipped; predicted geometry is never fed into quality/embedding/recognition.
+- Per-profile embedding storage limits (`ProfileRepository.add_embedding(max_embeddings=...)`).
+- `GET /api/v1/metrics`: an authenticated, privacy-safe JSON snapshot of worker throughput and aggregate counts.
+- FAISS was deliberately not added — unjustified at this project's current data scale (ADR 0020's reasoning).
+- No real FPS/latency benchmark exists in this environment (no camera hardware); no number is claimed.
+- M15 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M14 Advanced Liveness Addition
 

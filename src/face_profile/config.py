@@ -187,6 +187,7 @@ class DatabaseConfig(StrictModel):
     path: ConfigPath = Path("data/face_profile.sqlite3")
     key_path: ConfigPath = Path("data/face_profile.key")
     retention_days: int = Field(default=30, ge=1, le=3650)
+    maximum_embeddings_per_profile: int = Field(default=50, ge=1, le=1000)
 
     @model_validator(mode="after")
     def validate_paths(self) -> Self:
@@ -202,6 +203,7 @@ class RecognitionConfig(StrictModel):
     min_consistent_observations: int = Field(default=3, ge=1, le=100)
     confirmation_window_seconds: float = Field(default=5.0, gt=0.0, le=600.0)
     max_tracks: int = Field(default=100, ge=1, le=10_000)
+    embedding_cache_refresh_seconds: float = Field(default=2.0, gt=0.0, le=600.0)
 
 
 class EnrollmentConfig(StrictModel):
@@ -291,6 +293,7 @@ class APIConfig(StrictModel):
     max_request_body_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
     events_page_size: int = Field(default=50, ge=1, le=1000)
     worker_poll_interval_seconds: float = Field(default=0.1, gt=0.0, le=60.0)
+    detection_interval_frames: int = Field(default=1, ge=1, le=100)
 
     @model_validator(mode="after")
     def validate_fail_closed(self) -> Self:

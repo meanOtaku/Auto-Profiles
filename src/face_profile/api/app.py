@@ -161,4 +161,5 @@ def _build_worker(
         passive_liveness_evaluator=create_passive_liveness_evaluator(config.liveness),
         profiles=database.profiles if database is not None else None,
         poll_interval_seconds=config.api.worker_poll_interval_seconds,
+        detection_interval_frames=config.api.detection_interval_frames,
     )

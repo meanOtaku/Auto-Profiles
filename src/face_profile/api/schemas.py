@@ -164,9 +164,26 @@ class StatusResponse(ApiModel):
     service_state: str
     worker_state: str
     frames_processed: int
+    frames_detected: int
     worker_last_error: str | None
     database_enabled: bool
     camera_enabled: bool
+
+
+class MetricsResponse(ApiModel):
+    """M15 metrics export: a minimal JSON snapshot, not a Prometheus endpoint.
+
+    Kept intentionally small and privacy-safe: counts only, no biometric
+    payloads, no per-person identifiers beyond aggregate counts.
+    """
+
+    worker_state: str
+    frames_processed: int
+    frames_detected: int
+    detection_skip_ratio: float
+    active_profile_count: int
+    collecting_candidate_count: int
+    ready_for_review_candidate_count: int
 
 
 class ErrorResponse(ApiModel):

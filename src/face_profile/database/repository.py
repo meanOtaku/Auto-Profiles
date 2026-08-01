@@ -358,10 +358,26 @@ class ProfileRepository:
         *,
         quality_score: float,
         is_representative: bool = False,
+        max_embeddings: int = 50,
     ) -> UUID:
-        """Encrypt and persist one embedding vector for an existing profile."""
+        """Encrypt and persist one embedding vector for an existing profile.
+
+        ``max_embeddings`` (M15's storage-limit deliverable) bounds
+        unconstrained per-profile growth; the default matches
+        ``EnrollmentConfig.maximum_samples_per_candidate`` so a normal
+        promotion transferring a candidate's full sample set is never
+        silently truncated. Callers should pass
+        ``config.database.maximum_embeddings_per_profile`` explicitly.
+        """
 
         self.get(profile_id)  # raises ProfileNotFoundError if missing
+        current_count = self._connection.execute(
+            "SELECT COUNT(*) FROM face_embeddings WHERE profile_id = ?", (str(profile_id),)
+        ).fetchone()[0]
+        if current_count >= max_embeddings:
+            raise ProfileRepositoryError(
+                f"profile {profile_id} already has the maximum {max_embeddings} embeddings"
+            )
         key = self._key_provider.get_key()
         encrypted = encrypt_bytes(
             key, embedding.vector.tobytes(), associated_data=str(profile_id).encode()

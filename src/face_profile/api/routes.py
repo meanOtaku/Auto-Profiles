@@ -35,6 +35,7 @@ from face_profile.api.schemas import (
     EventListResponse,
     EventResponse,
     HealthResponse,
+    MetricsResponse,
     ProfileExportRequest,
     ProfileExportResponse,
     ProfileImportRequest,
@@ -89,9 +90,41 @@ async def get_status(request: Request) -> StatusResponse:
         service_state="running",
         worker_state=worker_health.state.value if worker_health else WorkerState.STOPPED.value,
         frames_processed=worker_health.frames_processed if worker_health else 0,
+        frames_detected=worker_health.frames_detected if worker_health else 0,
         worker_last_error=worker_health.last_error if worker_health else None,
         database_enabled=state.database is not None,
         camera_enabled=state.config.camera.enabled,
+    )
+
+
+@router.get("/metrics", response_model=MetricsResponse, dependencies=[Depends(require_auth)])
+async def get_metrics(request: Request) -> MetricsResponse:
+    """M15 metrics export: worker throughput plus aggregate counts only."""
+
+    state = request.app.state
+    worker = getattr(state, "worker", None)
+    worker_health = worker.health() if worker is not None else None
+    frames_processed = worker_health.frames_processed if worker_health else 0
+    frames_detected = worker_health.frames_detected if worker_health else 0
+    skip_ratio = 1.0 - (frames_detected / frames_processed) if frames_processed > 0 else 0.0
+    active_profiles = 0
+    collecting = 0
+    ready = 0
+    database: ProfileDatabase | None = state.database
+    if database is not None:
+        active_profiles = len(database.profiles.list(status=ProfileStatus.ACTIVE, limit=1000))
+        candidates = getattr(state, "candidates", None)
+        if candidates is not None:
+            collecting = len(candidates.list(status=CandidateStatus.COLLECTING, limit=1000))
+            ready = len(candidates.list(status=CandidateStatus.READY_FOR_REVIEW, limit=1000))
+    return MetricsResponse(
+        worker_state=worker_health.state.value if worker_health else WorkerState.STOPPED.value,
+        frames_processed=frames_processed,
+        frames_detected=frames_detected,
+        detection_skip_ratio=skip_ratio,
+        active_profile_count=active_profiles,
+        collecting_candidate_count=collecting,
+        ready_for_review_candidate_count=ready,
     )
 
 

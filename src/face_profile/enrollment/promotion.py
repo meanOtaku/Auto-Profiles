@@ -47,6 +47,7 @@ class CandidatePromoter:
         events: RecognitionEventRepository,
         duplicate_profile_threshold: float,
         require_liveness: bool = False,
+        max_embeddings_per_profile: int = 50,
     ) -> None:
         self._connection = connection
         self._candidates = candidates
@@ -54,6 +55,7 @@ class CandidatePromoter:
         self._events = events
         self._duplicate_profile_threshold = duplicate_profile_threshold
         self._require_liveness = require_liveness
+        self._max_embeddings_per_profile = max_embeddings_per_profile
 
     def promote(
         self,
@@ -112,7 +114,10 @@ class CandidatePromoter:
             )
             for metadata, embedding in embeddings:
                 self._profiles.add_embedding(
-                    profile.id, embedding, quality_score=metadata.quality_score
+                    profile.id,
+                    embedding,
+                    quality_score=metadata.quality_score,
+                    max_embeddings=self._max_embeddings_per_profile,
                 )
             self._candidates.mark_promoted(
                 candidate_id, profile_id=profile.id, reviewed_by=reviewed_by

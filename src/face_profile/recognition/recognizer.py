@@ -15,6 +15,7 @@ from face_profile.database.models import ProfileStatus
 from face_profile.database.repository import ProfileRepository
 from face_profile.recognition.cache import RecognitionCache
 from face_profile.recognition.decision import RecognitionDecision, decide
+from face_profile.recognition.embedding_cache import ActiveProfileEmbeddingCache
 from face_profile.recognition.matcher import find_nearest_profiles
 from face_profile.vision.embedding import FaceEmbedding
 
@@ -29,11 +30,13 @@ class KnownPersonRecognizer:
         cache: RecognitionCache,
         threshold: float,
         margin: float,
+        embedding_cache: ActiveProfileEmbeddingCache | None = None,
     ) -> None:
         self._profiles = profiles
         self._cache = cache
         self._threshold = threshold
         self._margin = margin
+        self._embedding_cache = embedding_cache
 
     def recognize(
         self,
@@ -44,12 +47,16 @@ class KnownPersonRecognizer:
     ) -> RecognitionDecision:
         """Return the stabilized recognition decision for one observation.
 
-        Loading every active profile's embeddings and decrypting each one
-        on every call is a known, documented performance limitation;
-        caching and batching are deferred to M15.
+        When no ``embedding_cache`` (M15) is configured, every active
+        profile's embeddings are decrypted on every call — a documented
+        performance limitation kept intentionally available as the
+        simplest, always-correct fallback.
         """
 
-        candidates = tuple(self._iter_active_candidate_embeddings())
+        if self._embedding_cache is not None:
+            candidates = self._embedding_cache.get(now=observed_at)
+        else:
+            candidates = tuple(self._iter_active_candidate_embeddings())
         matches = find_nearest_profiles(embedding, candidates)
         raw_decision = decide(matches, threshold=self._threshold, margin=self._margin)
         return self._cache.observe(track_id, raw_decision, observed_at=observed_at)
