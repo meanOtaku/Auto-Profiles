@@ -308,6 +308,31 @@ class UIConfig(StrictModel):
     enabled: bool = False
 
 
+class LivenessConfig(StrictModel):
+    """M14 passive/active liveness thresholds, disabled by default.
+
+    The passive checks are classical spectral/reflectance heuristics, not
+    a trained anti-spoof model; see ``liveness/passive.py`` and
+    docs/reports/M14.md for the documented, unevaluated-accuracy caveat.
+    """
+
+    enabled: bool = False
+    minimum_passive_score: float = Field(default=0.5, ge=0.0, le=1.0)
+    high_frequency_energy_min: float = Field(default=0.02, ge=0.0, le=1.0)
+    high_frequency_energy_max: float = Field(default=0.35, ge=0.0, le=1.0)
+    minimum_specular_variance: float = Field(default=5.0, ge=0.0, le=10_000.0)
+    require_active_challenge: bool = False
+    active_challenge_min_yaw_delta: float = Field(default=0.2, gt=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> Self:
+        if self.high_frequency_energy_min >= self.high_frequency_energy_max:
+            raise ValueError(
+                "high_frequency_energy_min must be less than high_frequency_energy_max"
+            )
+        return self
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -343,6 +368,7 @@ class AppConfig(StrictModel):
     preference_learning: PreferenceLearningConfig = PreferenceLearningConfig()
     api: APIConfig = APIConfig()
     ui: UIConfig = UIConfig()
+    liveness: LivenessConfig = LivenessConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 

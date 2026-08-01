@@ -22,6 +22,7 @@ from uuid import UUID
 from face_profile.camera import EndOfFrames, Frame, FrameSourceLifecycle, TemporaryFrameSourceError
 from face_profile.database.repository import ProfileNotFoundError, ProfileRepository
 from face_profile.enrollment.manager import CandidateManager
+from face_profile.liveness.passive import PassiveLivenessEvaluator
 from face_profile.presence.active_user import ActiveUserSelector, PresenceCandidate
 from face_profile.presence.builder import build_presence_candidate
 from face_profile.recognition.decision import RecognitionState
@@ -70,6 +71,7 @@ class PipelineWorker:
         candidate_manager: CandidateManager | None = None,
         active_user_selector: ActiveUserSelector | None = None,
         preference_service: LastUsedPreferenceService | None = None,
+        passive_liveness_evaluator: PassiveLivenessEvaluator | None = None,
         profiles: ProfileRepository | None = None,
         poll_interval_seconds: float = 0.1,
     ) -> None:
@@ -83,6 +85,7 @@ class PipelineWorker:
         self._candidate_manager = candidate_manager
         self._active_user_selector = active_user_selector
         self._preference_service = preference_service
+        self._passive_liveness_evaluator = passive_liveness_evaluator
         self._profiles = profiles
         self._poll_interval_seconds = poll_interval_seconds
 
@@ -210,6 +213,9 @@ class PipelineWorker:
             return None
         aligned = self._aligner.align(frame, detection)
         embedding = self._embedder.generate(aligned)
+        liveness_passed = True
+        if self._passive_liveness_evaluator is not None:
+            liveness_passed = self._passive_liveness_evaluator.evaluate(aligned).passed
 
         if self._recognizer is None:
             return None
@@ -222,6 +228,7 @@ class PipelineWorker:
                 detection.landmarks,
                 quality_score=quality.score,
                 observed_at=now,
+                liveness_passed=liveness_passed,
             )
 
         if decision.state is not RecognitionState.CONFIRMED_MATCH or decision.profile_id is None:

@@ -31,6 +31,10 @@ class DuplicateProfileError(PromotionError):
     """Raised when a re-checked duplicate match blocks promotion."""
 
 
+class LivenessRequiredError(PromotionError):
+    """Raised when M14 liveness is required but the candidate did not pass it."""
+
+
 class CandidatePromoter:
     """Approve and promote one ``READY_FOR_REVIEW`` candidate to a profile."""
 
@@ -42,12 +46,14 @@ class CandidatePromoter:
         profiles: ProfileRepository,
         events: RecognitionEventRepository,
         duplicate_profile_threshold: float,
+        require_liveness: bool = False,
     ) -> None:
         self._connection = connection
         self._candidates = candidates
         self._profiles = profiles
         self._events = events
         self._duplicate_profile_threshold = duplicate_profile_threshold
+        self._require_liveness = require_liveness
 
     def promote(
         self,
@@ -72,6 +78,14 @@ class CandidatePromoter:
             raise CandidateNotReadyError(
                 f"candidate is not ready for review (status={candidate.status})"
             )
+        if self._require_liveness and candidate.metadata.get("liveness_passed") is not True:
+            # Defense-in-depth: CandidateManager already gates
+            # READY_FOR_REVIEW on liveness when M14 is enabled, but the
+            # candidate row's own recorded flag is re-checked here too,
+            # since HERMES.md requires failed liveness can never create a
+            # permanent profile even under a future caller that reached
+            # READY_FOR_REVIEW some other way.
+            self._reject_for_liveness(candidate_id)
 
         embeddings = [
             (metadata, self._candidates.get_embedding_vector(metadata.id))
@@ -123,3 +137,14 @@ class CandidatePromoter:
             raise
         self._connection.commit()
         raise DuplicateProfileError(f"candidate matches existing profile {matched_profile_id}")
+
+    def _reject_for_liveness(self, candidate_id: UUID) -> None:
+        try:
+            self._candidates.reject(candidate_id, reason="liveness_failed")
+        except Exception:
+            self._connection.rollback()
+            raise
+        self._connection.commit()
+        raise LivenessRequiredError(
+            f"candidate {candidate_id} did not pass required liveness checks"
+        )

@@ -39,6 +39,7 @@ def create_candidate_promoter(
         profiles=database.profiles,
         events=database.events,
         duplicate_profile_threshold=config.enrollment.duplicate_profile_threshold,
+        require_liveness=config.liveness.enabled,
     )
 
 

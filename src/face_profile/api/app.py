@@ -25,6 +25,7 @@ from face_profile.database.factory import create_profile_database
 from face_profile.database.keys import LocalFileKeyProvider
 from face_profile.database.repository import ProfileDatabase
 from face_profile.enrollment.factory import create_candidate_manager, create_candidate_promoter
+from face_profile.liveness.passive import create_passive_liveness_evaluator
 from face_profile.presence.active_user import ActiveUserSelector
 from face_profile.presence.factory import create_active_user_selector
 from face_profile.recognition.factory import create_recognizer
@@ -157,6 +158,7 @@ def _build_worker(
         candidate_manager=candidate_manager,
         active_user_selector=active_user_selector,
         preference_service=preference_service,
+        passive_liveness_evaluator=create_passive_liveness_evaluator(config.liveness),
         profiles=database.profiles if database is not None else None,
         poll_interval_seconds=config.api.worker_poll_interval_seconds,
     )

@@ -1,6 +1,14 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M12 headless daemon and API implementation under verification**; every capability (biometric persistence, recognition, enrollment, the real settings adapter, active-user selection, preference learning, and the API/daemon itself) remains an explicit opt-in.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M14 advanced liveness implementation under verification**; every capability (biometric persistence, recognition, enrollment, liveness, the real settings adapter, active-user selection, preference learning, the API/daemon, and the optional UI) remains an explicit opt-in.
+
+## M14 Advanced Liveness Addition
+
+- Passive spectral/reflectance heuristics (not a trained anti-spoof model — none was available to responsibly source and evaluate in this environment) and a deterministic active-challenge yaw-turn verifier.
+- A depth/IR signal interface stub, no real hardware backend.
+- "Failed liveness cannot create a permanent profile" enforced twice: sticky per-track gating in `CandidateManager`, plus an independent promotion-time defense-in-depth re-check in `CandidatePromoter` — verified against a real database, including a simulated bypass attempt.
+- No standard printed-photo test set exists in this environment; no spoof-detection accuracy rate is claimed.
+- M14 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M12 Headless Daemon and API Addition
 

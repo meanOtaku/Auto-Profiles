@@ -49,6 +49,7 @@ class CandidateManager:
         self._max_tracked = max_tracked
         self._track_candidates: dict[int, UUID] = {}
         self._track_frontal_seen: dict[int, bool] = {}
+        self._track_liveness_failed: dict[int, bool] = {}
 
     def observe_unknown(
         self,
@@ -59,12 +60,18 @@ class CandidateManager:
         quality_score: float,
         observed_at: datetime,
         source_camera_id: str | None = None,
+        liveness_passed: bool = True,
     ) -> Candidate:
         """Fold in one unrecognized (M7 ``UNKNOWN``) observation for a track.
 
         A one-frame observation never crosses ``minimum_samples``, so it
         can never reach ``READY_FOR_REVIEW`` and can never create a
-        permanent profile.
+        permanent profile. ``liveness_passed`` defaults to True so callers
+        that have not enabled M14 liveness are unaffected; once any
+        observation for a track fails liveness, that track is sticky-
+        failed (HERMES.md: "failed liveness cannot create a permanent
+        profile") and can never reach READY_FOR_REVIEW, even if a later
+        sample passes.
         """
 
         candidate = self._resolve_or_start_candidate(track_id, observed_at)
@@ -86,11 +93,14 @@ class CandidateManager:
             max_yaw_asymmetry=self._config.near_frontal_max_yaw_asymmetry,
         ):
             self._track_frontal_seen[track_id] = True
+        if not liveness_passed:
+            self._track_liveness_failed[track_id] = True
 
         refreshed = self._candidates.get(candidate.id)
         result = self.evaluate(track_id, refreshed)
         if result.ready:
             self._candidates.mark_ready_for_review(candidate.id)
+            self._candidates.set_metadata_flag(candidate.id, "liveness_passed", True)
         return self._candidates.get(candidate.id)
 
     def _resolve_or_start_candidate(self, track_id: int, observed_at: datetime) -> Candidate:
@@ -140,6 +150,7 @@ class CandidateManager:
             best_active_profile_similarity=_best_similarity(embeddings, active_pairs),
             best_other_candidate_similarity=_best_similarity(embeddings, other_candidate_pairs),
             thresholds=thresholds,
+            liveness_ok=not self._track_liveness_failed.get(track_id, False),
         )
 
     def expire_stale(self, *, now: datetime) -> tuple[UUID, ...]:
@@ -167,6 +178,7 @@ class CandidateManager:
     def _forget_track(self, track_id: int) -> None:
         self._track_candidates.pop(track_id, None)
         self._track_frontal_seen.pop(track_id, None)
+        self._track_liveness_failed.pop(track_id, None)
 
     def _active_profile_embeddings(self) -> tuple[tuple[UUID, FaceEmbedding], ...]:
         pairs: list[tuple[UUID, FaceEmbedding]] = []

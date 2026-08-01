@@ -278,6 +278,23 @@ class CandidateRepository:
         )
         return self.get(candidate_id)
 
+    def set_metadata_flag(self, candidate_id: UUID, key: str, value: bool) -> Candidate:
+        """Merge one boolean flag into a candidate's metadata (e.g. M14 liveness).
+
+        Used for defense-in-depth checks (such as M14's liveness gate)
+        that must be re-checkable at promotion time without re-deriving
+        them from biometric samples the candidate row no longer retains.
+        """
+
+        candidate = self.get(candidate_id)
+        metadata = dict(candidate.metadata)
+        metadata[key] = value
+        self._connection.execute(
+            "UPDATE candidates SET metadata_json = ? WHERE id = ?",
+            (json.dumps(metadata), str(candidate_id)),
+        )
+        return self.get(candidate_id)
+
     def reject(
         self, candidate_id: UUID, *, reason: str, reviewed_by: str | None = None
     ) -> Candidate:

@@ -112,6 +112,8 @@ Responsibilities:
 
 M8 implements candidate lifecycle with `database/candidate_repository.py`'s `CandidateRepository` (schema migration v2: `candidates`, `candidate_embeddings`, encrypted exactly like `face_embeddings`) and `enrollment/manager.py`'s `CandidateManager`, which maps each track to at most one in-flight candidate. `enrollment/qualification.py`'s pure `evaluate_candidate_qualification()` implements HERMES's unknown-person policy checks (sample count, duration, quality, near-frontal, internal consistency, temporal variability, duplicate-vs-profile, duplicate-vs-candidate) before a candidate may reach `READY_FOR_REVIEW`. `enrollment/promotion.py`'s `CandidatePromoter` is the atomic, auditable, idempotent promotion transaction, re-checking duplicates immediately before creating a profile. Automatic promotion is unconditionally rejected by configuration validation until M12/M14 deliver the required production gates.
 
+M14 adds `liveness/`: `passive.py`'s `HeuristicPassiveLivenessEvaluator` (FFT high-frequency energy ratio and specular-highlight-spread heuristics — classical signal-processing proxies, not a trained model), `active_challenge.py`'s deterministic yaw-sequence turn-challenge verifier, and `depth.py`'s interface-only `DepthIRSignal` stub. "Failed liveness cannot create a permanent profile" is enforced twice: `CandidateManager` tracks a sticky per-track liveness-failed flag that permanently blocks `READY_FOR_REVIEW`, and `CandidatePromoter` independently re-checks a persisted `liveness_passed` candidate-metadata flag before promoting, rejecting (and deleting embeddings) if it is not explicitly true.
+
 Entities:
 
 - Profile

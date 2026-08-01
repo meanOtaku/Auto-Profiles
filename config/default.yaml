@@ -147,6 +147,19 @@ ui:
   # client with no domain logic of its own. See docs/reports/M13.md.
   enabled: false
 
+liveness:
+  # M14 liveness is disabled by default. The passive checks are classical
+  # spectral/reflectance heuristics, not a trained anti-spoof model, and
+  # have no evaluated real-world accuracy; see docs/reports/M14.md and
+  # ADR 0019 before enabling and relying on them.
+  enabled: false
+  minimum_passive_score: 0.5
+  high_frequency_energy_min: 0.02
+  high_frequency_energy_max: 0.35
+  minimum_specular_variance: 5.0
+  require_active_challenge: false
+  active_challenge_min_yaw_delta: 0.2
+
 logging:
   level: INFO
 

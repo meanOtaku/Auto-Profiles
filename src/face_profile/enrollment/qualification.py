@@ -55,12 +55,17 @@ def evaluate_candidate_qualification(
     best_active_profile_similarity: float | None,
     best_other_candidate_similarity: float | None,
     thresholds: QualificationThresholds,
+    liveness_ok: bool = True,
 ) -> QualificationResult:
     """Evaluate every configured gate and report every failing reason.
 
     ``embeddings`` must be the candidate's own collected samples (not
     external profiles); their pairwise similarity backs both the
     mixed-identity guard and the minimum temporal-variability check.
+    ``liveness_ok`` defaults to True so callers that have not enabled M14
+    liveness are unaffected; when M14 is enabled, a caller must pass
+    whether every observed sample passed the configured liveness checks
+    (HERMES.md: "failed liveness cannot create a permanent profile").
     """
 
     reasons: list[str] = []
@@ -73,6 +78,8 @@ def evaluate_candidate_qualification(
         reasons.append("insufficient_quality")
     if not has_near_frontal_sample:
         reasons.append("no_near_frontal_sample")
+    if not liveness_ok:
+        reasons.append("liveness_failed")
 
     pairwise = _pairwise_similarities(embeddings)
     if pairwise:
