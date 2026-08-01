@@ -134,6 +134,9 @@ A headless-first, local identity and device-personalization service built increm
 
 Exact baseline: CPython 3.11.15 and uv 0.11.32. CI also verifies CPython 3.12.13 compatibility. Project metadata accepts maintained CPython 3.11 and 3.12 patch releases, while the committed lockfile and exact development-tool pins make the verified toolchain reproducible.
 
+See `docs/RUNNING_ON_UBUNTU.md` for a full walkthrough: baseline, clone, `run.sh`,
+CLI usage, private local configs, and every opt-in control.
+
 ### One command, on a fresh Ubuntu machine
 
 ```bash
@@ -184,6 +187,7 @@ uv build
 - `CONTRIBUTING.md` — development and review workflow
 - `docs/THREAT_MODEL.md` — security boundaries, threats, and required controls
 - `docs/RUNBOOK.md` — bootstrap, validation, and troubleshooting procedures
+- `docs/RUNNING_ON_UBUNTU.md` — end-to-end Ubuntu setup and opt-in guide
 - `docs/adr/` — accepted architectural decisions
 
 ## Safety and Privacy

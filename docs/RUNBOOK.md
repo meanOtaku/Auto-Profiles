@@ -1,5 +1,10 @@
 # Operations Runbook
 
+For a guided, end-to-end Ubuntu walkthrough (clone, `run.sh`, CLI usage, private local
+configs, and every feature's explicit opt-in and prerequisites), see
+`docs/RUNNING_ON_UBUNTU.md`. This runbook documents the underlying bootstrap/config/
+troubleshooting contract in more detail.
+
 ## Supported Foundation
 
 M2 uses CPython 3.11.15 and uv 0.11.32 as its exact baseline. CI also verifies CPython 3.12.13. Project metadata accepts maintained CPython 3.11–3.12 patch releases. The default command performs a hardware-free lifecycle check. It does not activate a camera, load a detector model, persist biometric data, or change host settings.
