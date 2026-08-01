@@ -11,10 +11,13 @@ requires-python = ">=3.11,<3.13"
 authors = [{ name = "Vaibhav Bisht" }]
 dependencies = [
   "cryptography==46.0.3",
+  "fastapi==0.121.2",
   "numpy==2.4.6",
   "opencv-python-headless==5.0.0.93",
   "pydantic==2.13.4",
   "PyYAML==6.0.3",
+  "uvicorn==0.38.0",
+  "websockets==15.0.1",
 ]
 
 [project.scripts]
@@ -23,6 +26,7 @@ face-profile = "face_profile.cli:main"
 [dependency-groups]
 dev = [
   "build==1.5.0",
+  "httpx==0.28.1",
   "mypy==1.20.2",
   "pip-audit==2.10.1",
   "pip-licenses==5.5.5",

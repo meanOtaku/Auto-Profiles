@@ -129,6 +129,19 @@ preference_learning:
   min_active_duration_seconds: 2.0
   self_application_tolerance_seconds: 2.0
 
+api:
+  # M12 headless daemon/API is disabled by default. Binding beyond
+  # loopback without an explicit auth_token is rejected at config-load
+  # time, not merely at request time; see docs/reports/M12.md and ADR 0017.
+  enabled: false
+  bind_host: 127.0.0.1
+  bind_port: 8443
+  auth_token: null
+  rate_limit_per_minute: 120
+  max_request_body_bytes: 1000000
+  events_page_size: 50
+  worker_poll_interval_seconds: 0.1
+
 logging:
   level: INFO
 

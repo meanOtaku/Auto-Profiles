@@ -193,6 +193,8 @@ Responsibilities:
 
 Must not contain domain decisions.
 
+M12 implements this layer with `api/`: FastAPI `app.py` wires M6–M11 into one process; `routes.py` implements HERMES's full `/api/v1` surface plus `WS /events/live` (poll-based, not true pub/sub); `auth.py`/`rate_limit.py` provide bearer-token auth and fixed-window rate limiting; `worker.py`'s `PipelineWorker` is a simple threaded polling loop (not yet the bounded-queue architecture §5 describes, deferred to M15) running detect→track→quality→align→embed→recognize→enroll→select-active-user→learn-preferences when `camera.enabled`. `APIConfig` fails closed at configuration-load time for non-loopback binding without an explicit token.
+
 ### 4.9 UI Layer
 
 Responsibilities:

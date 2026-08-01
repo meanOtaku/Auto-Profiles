@@ -271,6 +271,37 @@ class PreferenceLearningConfig(StrictModel):
     self_application_tolerance_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+class APIConfig(StrictModel):
+    """M12 headless daemon/REST/WebSocket API configuration.
+
+    Fails closed at configuration-validation time (not merely at request
+    time) when the API is enabled, bound beyond loopback, and no
+    ``auth_token`` is configured, per HERMES.md's non-loopback
+    administrative-API rule.
+    """
+
+    enabled: bool = False
+    bind_host: str = "127.0.0.1"
+    bind_port: int = Field(default=8443, ge=1, le=65535)
+    auth_token: str | None = Field(default=None, min_length=16, max_length=256)
+    rate_limit_per_minute: int = Field(default=120, ge=1, le=100_000)
+    max_request_body_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+    events_page_size: int = Field(default=50, ge=1, le=1000)
+    worker_poll_interval_seconds: float = Field(default=0.1, gt=0.0, le=60.0)
+
+    @model_validator(mode="after")
+    def validate_fail_closed(self) -> Self:
+        if self.enabled and self.bind_host not in _LOOPBACK_HOSTS and self.auth_token is None:
+            raise ValueError(
+                "non-loopback API binding requires an explicit auth_token; "
+                "refusing to start without authentication per HERMES.md"
+            )
+        return self
+
+
 class LoggingConfig(StrictModel):
     """Structured logging configuration."""
 
@@ -304,6 +335,7 @@ class AppConfig(StrictModel):
     enrollment: EnrollmentConfig = EnrollmentConfig()
     active_user: ActiveUserConfig = ActiveUserConfig()
     preference_learning: PreferenceLearningConfig = PreferenceLearningConfig()
+    api: APIConfig = APIConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
 

@@ -1,6 +1,15 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M11 last-used preference persistence implementation under verification**; no network API is enabled yet, and biometric persistence, recognition, enrollment, the real settings adapter, active-user selection, and preference learning all remain explicit opt-ins.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M12 headless daemon and API implementation under verification**; every capability (biometric persistence, recognition, enrollment, the real settings adapter, active-user selection, preference learning, and the API/daemon itself) remains an explicit opt-in.
+
+## M12 Headless Daemon and API Addition
+
+- Full FastAPI `/api/v1` surface (profiles, candidates, events, settings, system pause/resume) plus a poll-based `WS /events/live`, verified end-to-end via `TestClient`.
+- Bearer-token auth with fail-closed non-loopback validation at config-load time, plus fixed-window rate limiting.
+- `PipelineWorker`: a threaded detect→...→learn-preferences loop with pause/resume/health, disabled unless `camera.enabled`.
+- Two real bugs found and fixed during this milestone's own smoke testing: a cross-thread SQLite crash, and a `DELETE`-with-JSON-body API design defect (now a query parameter).
+- `face-profile serve` CLI command.
+- M12 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M11 Last-Used Preference Persistence Addition
 

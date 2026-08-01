@@ -362,6 +362,23 @@ class CandidateRepository:
         )
         return self.get(candidate_id)
 
+    def delete(self, candidate_id: UUID) -> None:
+        """Permanently remove one candidate and its embeddings, any status.
+
+        This is the explicit, owner-initiated deletion the M12 API exposes
+        (``DELETE /api/v1/candidates/{id}``); it is stronger than
+        :meth:`reject`, which preserves the row for audit history.
+        """
+
+        self._connection.execute(
+            "DELETE FROM candidate_embeddings WHERE candidate_id = ?", (str(candidate_id),)
+        )
+        cursor = self._connection.execute(
+            "DELETE FROM candidates WHERE id = ?", (str(candidate_id),)
+        )
+        if cursor.rowcount == 0:
+            raise CandidateNotFoundError(str(candidate_id))
+
     def purge_terminal(self, *, now: datetime, retention_days: int) -> int:
         """Permanently remove old EXPIRED/REJECTED candidate rows.
 

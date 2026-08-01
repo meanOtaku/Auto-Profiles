@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TextIO
 from uuid import UUID
 
+from face_profile.api.app import create_app
 from face_profile.camera import ImageFrameSource, save_frame
 from face_profile.camera.factory import create_frame_source
 from face_profile.config import AppConfig, ConfigurationError, load_config
@@ -106,6 +107,7 @@ def _parser() -> argparse.ArgumentParser:
     candidate_reject.add_argument("--id", required=True)
     candidate_reject.add_argument("--reason", required=True)
     candidate_reject.add_argument("--reviewed-by")
+    commands.add_parser("serve")
     return parser
 
 
@@ -635,6 +637,28 @@ def main(
             + "\n"
         )
         database.close()
+        return 0
+
+    if args.command == "serve":
+        if not config.api.enabled:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "the API is disabled",
+                extra={"event_type": "StartupFailed", "error_code": "api_disabled"},
+            )
+            return 3
+        import uvicorn
+
+        app = create_app(config)
+        logger.info(
+            "starting API server",
+            extra={"event_type": "ServiceStarted", "state": "running"},
+        )
+        uvicorn.run(app, host=config.api.bind_host, port=config.api.bind_port, log_config=None)
+        logger.info(
+            "API server stopped",
+            extra={"event_type": "ServiceStopped", "state": "stopped"},
+        )
         return 0
 
     settings = create_settings_adapter(
