@@ -251,10 +251,17 @@ class LoggingConfig(StrictModel):
 
 
 class SettingsConfig(StrictModel):
-    """Safe initial values used by the mock settings adapter."""
+    """Settings-adapter selection, initial mock values, and rate limiting.
 
+    M9's real Linux adapter must be explicitly selected; ``mock`` remains
+    the default so recognition and profile code never changes host
+    settings unless a deployer opts in.
+    """
+
+    backend: Literal["mock", "linux"] = "mock"
     volume: int = Field(default=50, ge=0, le=100)
     brightness: int = Field(default=50, ge=0, le=100)
+    min_apply_interval_seconds: float = Field(default=0.2, ge=0.0, le=60.0)
 
 
 class AppConfig(StrictModel):

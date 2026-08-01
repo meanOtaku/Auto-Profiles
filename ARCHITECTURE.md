@@ -145,6 +145,8 @@ Responsibilities:
 - Debounce preference updates
 - Prevent feedback loops
 
+M9 implements the portable model, validation, and OS-adapter layers. `settings/__init__.py`'s `SettingsAdapter` protocol gains `capabilities()` (`AdapterCapabilities`/`CapabilityStatus`: available/unsupported/permission-denied) so gaps are reported explicitly rather than silently ignored. `settings/linux.py`'s `LinuxSettingsAdapter` is the one explicitly selected real adapter (ALSA `amixer` for volume, sysfs `/sys/class/backlight` for brightness), fully dependency-injected via `CommandRunner`/`BacklightAccessor` protocols so automated tests never touch real hardware; a partial apply (one setting succeeds, the other fails) triggers a best-effort rollback of the value that changed. `settings/rate_limit.py`'s `RateLimitedSettingsAdapter` wraps any adapter to reject rapid repeated applies and record self-applied values — the mechanism ARCHITECTURE.md §11 describes; M11 owns the attribution/debounce policy built on top of it. `settings/factory.create_settings_adapter()` always returns a working (at minimum mock) adapter, but only selects the real backend when `settings.backend: linux` is explicitly configured.
+
 ### 4.6 Persistence Layer
 
 Responsibilities:

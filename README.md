@@ -1,6 +1,16 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M8 candidate enrollment and owner-reviewed promotion implementation under verification**; no active-user selection, network API, or real operating-system adapter is enabled yet, and biometric persistence, recognition, and enrollment all remain explicit opt-ins.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. The project has an **M9 settings abstraction and Linux platform adapter implementation under verification**; no active-user selection or network API is enabled yet, and biometric persistence, recognition, enrollment, and the real settings adapter all remain explicit opt-ins.
+
+## M9 Settings Abstraction and Platform Adapter Addition
+
+- `SettingsAdapter.capabilities()` reports available/unsupported/permission-denied per setting instead of silently ignoring gaps.
+- `LinuxSettingsAdapter`: ALSA `amixer` for volume, sysfs backlight for brightness — the one explicitly selected real adapter, fully dependency-injected so automated tests never touch real hardware.
+- Partial-application rollback: if one of volume/brightness fails after the other succeeded, the adapter rolls the succeeded value back and reports both failures.
+- `RateLimitedSettingsAdapter`: rejects rapid repeated applies and records self-applied values for M11's future feedback-loop attribution.
+- `settings.backend` stays `mock` by default; selecting `linux` is an explicit opt-in.
+- The HERMES-required real-hardware manual test has **not** been performed (no ALSA mixer or backlight device exist in this environment) and is not claimed as passed.
+- M9 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.
 
 ## M8 Candidate Enrollment and Review Addition
 

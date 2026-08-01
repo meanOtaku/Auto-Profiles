@@ -36,7 +36,8 @@ from face_profile.enrollment.promotion import (
 from face_profile.logging import configure_logging
 from face_profile.recognition.factory import create_recognizer
 from face_profile.service import Service
-from face_profile.settings import DeviceSettings, MockSettingsAdapter
+from face_profile.settings import DeviceSettings
+from face_profile.settings.factory import create_settings_adapter
 from face_profile.vision.alignment import AlignmentError, FaceAligner, create_aligner
 from face_profile.vision.detection import DetectionError, FaceDetector, render_detection_debug
 from face_profile.vision.embedding import (
@@ -636,11 +637,12 @@ def main(
         database.close()
         return 0
 
-    settings = MockSettingsAdapter(
-        DeviceSettings(
+    settings = create_settings_adapter(
+        config.settings,
+        initial=DeviceSettings(
             volume=config.settings.volume,
             brightness=config.settings.brightness,
-        )
+        ),
     )
     service = Service(
         config=config,

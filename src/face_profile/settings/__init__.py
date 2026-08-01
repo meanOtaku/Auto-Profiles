@@ -1,6 +1,14 @@
-"""Portable settings boundary and deterministic test adapter."""
+"""Portable settings boundary and deterministic test adapter.
 
-from dataclasses import dataclass
+Recognition and profile code must never call an OS-specific adapter
+directly; only this module's ``SettingsAdapter`` contract is depended on
+elsewhere, per HERMES.md's settings-system rule and CODING_STANDARDS.md
+§4. M9 adds capability/permission reporting so unsupported operations are
+explicit rather than silently ignored.
+"""
+
+from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Protocol
 
 
@@ -21,11 +29,34 @@ class DeviceSettings:
                 raise SettingsValidationError(f"{name} must be an integer between 0 and 100")
 
 
+class CapabilityStatus(StrEnum):
+    """Whether one setting can currently be read or applied on this host."""
+
+    AVAILABLE = "available"
+    UNSUPPORTED = "unsupported"
+    PERMISSION_DENIED = "permission_denied"
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterCapabilities:
+    """Per-setting capability status, so gaps are reported, not guessed at."""
+
+    volume: CapabilityStatus
+    brightness: CapabilityStatus
+
+
 @dataclass(frozen=True, slots=True)
 class ApplyResult:
-    """Result of applying settings through an adapter."""
+    """Result of applying settings through an adapter.
+
+    ``errors`` and ``rolled_back`` default to empty/false so this remains
+    compatible with earlier callers that only constructed
+    ``ApplyResult(applied=...)``.
+    """
 
     applied: bool
+    errors: tuple[str, ...] = field(default=())
+    rolled_back: bool = False
 
 
 class SettingsAdapter(Protocol):
@@ -36,6 +67,8 @@ class SettingsAdapter(Protocol):
     def apply(self, settings: DeviceSettings) -> ApplyResult: ...
 
     def validate(self, settings: DeviceSettings) -> None: ...
+
+    def capabilities(self) -> AdapterCapabilities: ...
 
 
 class MockSettingsAdapter:
@@ -54,3 +87,8 @@ class MockSettingsAdapter:
 
     def validate(self, settings: DeviceSettings) -> None:
         DeviceSettings(volume=settings.volume, brightness=settings.brightness)
+
+    def capabilities(self) -> AdapterCapabilities:
+        return AdapterCapabilities(
+            volume=CapabilityStatus.AVAILABLE, brightness=CapabilityStatus.AVAILABLE
+        )
