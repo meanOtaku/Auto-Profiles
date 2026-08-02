@@ -87,6 +87,41 @@ uv run face-profile --config config/default.yaml check
 A successful `check` emits `ServiceStarted` and `ServiceStopped` JSON log lines and
 exits `0`. It does not access a camera or change host settings.
 
+### 3b. Continuous mode: `./run-continuous.sh`
+
+`run.sh` above is deliberately one-shot and safe by default. If you want the
+long-running API daemon instead, use the separate `./run-continuous.sh` launcher:
+
+```bash
+./run-continuous.sh
+```
+
+It locates the repository from its own script path the same way `run.sh` does
+(independent of your current directory), and delegates all bootstrapping, `uv`
+handling, and process execution to `run.sh` — it never duplicates that logic. It
+always runs `serve` and never falls back to `check`; no other `face-profile`
+subcommand can be forwarded through it, and any unrecognized argument is rejected
+before `uv`/`run.sh` is ever invoked. With no arguments it serves the
+repository-shipped `config/continuous.yaml`: the loopback-only REST/WebSocket API is
+enabled (no `auth_token` required on loopback — see §7), while camera, detection,
+database, recognition, enrollment, and every other sensitive capability stay
+disabled/mock, exactly like `config/default.yaml`.
+
+**This starts the API daemon only. It does not enable camera-based face
+recognition** — that still requires your own private config that explicitly opts in
+(§5–§6 below), passed via `--config`.
+
+```bash
+./run-continuous.sh --help                              # usage and options
+./run-continuous.sh --config data/my-private.yaml         # serve your own private config instead
+./run-continuous.sh --install-uv                          # pre-approve bootstrapping uv non-interactively
+```
+
+Stopping it is the same as stopping `serve` directly (§9): `Ctrl+C` for a graceful
+shutdown, or `SIGTERM` if run under a process manager — this script, `run.sh`, and
+`run.sh`'s final `exec uv run ...` all use `exec`, so the signal reaches the
+`uvicorn` process directly.
+
 ## 4. The `face-profile` CLI surface
 
 Every subcommand takes `--config PATH` (required) before the subcommand name:
@@ -125,9 +160,13 @@ vision pipeline.
 
 ## 5. Use a private local config — don't edit the tracked defaults
 
-`config/default.yaml` is the only config file tracked by git and it must stay fully
-disabled — it is what `./run.sh` and CI both rely on as the safe baseline. **Don't edit
-it** to turn features on.
+`config/default.yaml` and `config/continuous.yaml` are the only config files tracked
+by git. `default.yaml` must stay fully disabled — it is what `./run.sh` and CI both
+rely on as the safe baseline. `continuous.yaml` must stay loopback-only with no
+`auth_token` — it is what `./run-continuous.sh` relies on as its safe baseline; every
+other capability in it must stay disabled/mock like `default.yaml`. **Don't edit
+either file** to add camera/database/recognition access, a non-loopback `bind_host`,
+or an `auth_token`.
 
 Instead, copy it to a config that git does not track, and point `--config` /
 `FACE_PROFILE_CONFIG` at that copy:

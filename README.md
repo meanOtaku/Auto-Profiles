@@ -156,6 +156,32 @@ inference, `/dev/video*` permissions) on top of that guide.
 ./run.sh --install-uv                                # pre-approve bootstrapping uv non-interactively
 ```
 
+### Continuous mode: `./run-continuous.sh`
+
+```bash
+./run-continuous.sh
+```
+
+`run-continuous.sh` is a separate launcher, next to `run.sh` at the repository root, for
+starting the long-running API daemon instead of the one-shot check. It locates the
+repository the same way `run.sh` does (independent of your current directory), and
+delegates all bootstrapping, `uv` handling, and process execution to `run.sh` itself —
+it never duplicates that logic. It always runs `serve` and never falls back to
+`check`; no other `face-profile` subcommand can be forwarded through it. With no
+arguments it serves the repository-shipped `config/continuous.yaml`, which enables
+only the loopback-only REST/WebSocket API (no `auth_token` required on loopback) —
+camera, detection, database, recognition, enrollment, and every other sensitive
+capability stay disabled/mock, exactly like `config/default.yaml`. **This starts the
+API daemon only — it does not enable camera-based face recognition**; that requires
+your own private config that explicitly opts in (see `docs/RUNBOOK.md` and
+`docs/RUNNING_ON_UBUNTU.md`).
+
+```bash
+./run-continuous.sh --help                              # usage and options
+./run-continuous.sh --config data/my-private.yaml        # serve your own private config instead
+./run-continuous.sh --install-uv                         # pre-approve bootstrapping uv non-interactively, forwarded to run.sh
+```
+
 ### Manual equivalent
 
 ```bash
@@ -182,6 +208,7 @@ uv build
 ## Repository Guide
 
 - `run.sh` — safe-by-default single-command launcher for a fresh Ubuntu machine
+- `run-continuous.sh` — starts the `serve` API daemon (loopback-only, camera/recognition still disabled) through `run.sh`
 - `HERMES.md` — primary implementation contract and milestone rules
 - `ARCHITECTURE.md` — components, boundaries, data flow, and runtime design
 - `ROADMAP.md` — milestone sequence and completion criteria

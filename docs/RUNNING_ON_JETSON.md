@@ -187,6 +187,14 @@ on a headless Jetson.
   --config ... serve` (or another subcommand) in your own systemd service or
   equivalent — this is standard Linux process-supervision setup, not specific to
   this project.
+- **`./run-continuous.sh`** is a separate launcher, alongside `run.sh`, that always
+  starts `serve` (never the one-shot `check`) through `run.sh`/`uv` — nothing about
+  it differs on Jetson (`docs/RUNNING_ON_UBUNTU.md` §3b). By default it serves the
+  repository-shipped `config/continuous.yaml`, which enables only the loopback API
+  and keeps the camera/detector/database disabled — it does **not** enable webcam
+  recognition on its own. To run `serve` against your own webcam-backed private
+  config from §3–§4 above instead, pass it explicitly:
+  `./run-continuous.sh --config data/local.yaml`.
 
 ## 6. Verification commands (run these — they don't need a camera)
 

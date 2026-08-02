@@ -36,6 +36,43 @@ uv sync --locked --all-groups
 
 `run.sh` never changes host settings or enables the camera, detector, database, recognition, enrollment, or API on its own — that only happens if the config file it is pointed at explicitly sets those fields, exactly as with the manual `uv run face-profile` invocation below. Use `Webcam_demo.sh` for a scripted, integrity-pinned local-webcam walkthrough, or hand `run.sh` your own `--config` for other local camera/API workflows.
 
+## Continuous Launcher (`run-continuous.sh`)
+
+`./run-continuous.sh` at the repository root is a separate launcher for the
+long-running API daemon. `run.sh` itself is unchanged and remains the safe one-shot
+`check` launcher; `run-continuous.sh` never duplicates its bootstrap, `uv`-install,
+or process-exec logic — it locates the repository the same way (via its own script
+path, independent of the caller's current directory) and then delegates to `run.sh`:
+
+1. Resolves the repository directory the same way `run.sh` does, and refuses to run
+   if it isn't next to this project's `pyproject.toml`.
+2. Resolves a config file: `--config PATH`, then `FACE_PROFILE_CONFIG`, then the
+   repository-shipped `config/continuous.yaml` (loopback-only API enabled; camera,
+   detection, database, recognition, enrollment, and every other sensitive
+   capability disabled/mock, exactly like `config/default.yaml`).
+3. Always invokes `run.sh --config <resolved path> serve` (plus `--install-uv` if you
+   passed it) — it never falls back to `run.sh`'s default `check`, and no
+   `face-profile` subcommand other than `serve` can be requested through it. Any
+   other argument is rejected before `uv`/`run.sh` is ever invoked.
+4. Because this script, `run.sh`, and `run.sh`'s final `exec uv run ...` all use
+   `exec`, signals (`Ctrl+C`/`SIGTERM`) and the process exit code reach the `uvicorn`
+   process directly.
+
+```bash
+./run-continuous.sh                                  # serve config/continuous.yaml (loopback API only)
+./run-continuous.sh --config data/my-private.yaml     # serve your own private config instead
+./run-continuous.sh --install-uv                      # pre-approve bootstrapping uv non-interactively
+./run-continuous.sh --help                            # usage
+```
+
+**This starts the REST/WebSocket API daemon only.** It does not enable camera
+capture, face detection, the profile database, recognition, or enrollment — those
+require your own private config that explicitly opts in (see "Explicit opt-ins" in
+`docs/RUNNING_ON_UBUNTU.md` §6). `config/continuous.yaml` ships with no `auth_token`
+because it never binds beyond loopback; do not edit that tracked file to add a
+non-loopback `bind_host` or a token — use a private, gitignored config instead (see
+`docs/RUNNING_ON_UBUNTU.md` §5).
+
 ## Validate Configuration and Lifecycle
 
 ```bash
