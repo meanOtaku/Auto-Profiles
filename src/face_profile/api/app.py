@@ -30,7 +30,9 @@ from face_profile.presence.active_user import ActiveUserSelector
 from face_profile.presence.factory import create_active_user_selector
 from face_profile.recognition.factory import create_recognizer
 from face_profile.settings import DeviceSettings
+from face_profile.settings.active_profile_applier import ActiveProfileSettingsApplier
 from face_profile.settings.factory import (
+    create_active_profile_settings_applier,
     create_last_used_preference_service,
     create_settings_adapter,
 )
@@ -57,6 +59,9 @@ def create_app(config: AppConfig) -> FastAPI:
         ),
     )
     active_user_selector = create_active_user_selector(config.active_user)
+    settings_applier = create_active_profile_settings_applier(
+        adapter=settings_adapter, database=database
+    )
     preference_service = (
         create_last_used_preference_service(
             config.preference_learning, adapter=settings_adapter, database=database
@@ -68,6 +73,7 @@ def create_app(config: AppConfig) -> FastAPI:
         config,
         database=database,
         active_user_selector=active_user_selector,
+        settings_applier=settings_applier,
         preference_service=preference_service,
     )
     rate_limiter = RateLimiter(limit_per_minute=config.api.rate_limit_per_minute)
@@ -136,6 +142,7 @@ def _build_worker(
     *,
     database: ProfileDatabase | None,
     active_user_selector: ActiveUserSelector | None,
+    settings_applier: ActiveProfileSettingsApplier | None,
     preference_service: LastUsedPreferenceService | None,
 ) -> PipelineWorker | None:
     if not config.camera.enabled:
@@ -157,6 +164,7 @@ def _build_worker(
         recognizer=recognizer,
         candidate_manager=candidate_manager,
         active_user_selector=active_user_selector,
+        settings_applier=settings_applier,
         preference_service=preference_service,
         passive_liveness_evaluator=create_passive_liveness_evaluator(config.liveness),
         profiles=database.profiles if database is not None else None,

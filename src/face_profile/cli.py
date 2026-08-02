@@ -28,6 +28,7 @@ from face_profile.database.repository import (
     ProfileNotFoundError,
     ProfileRepositoryError,
 )
+from face_profile.diagnostics.preflight import run_preflight
 from face_profile.enrollment.factory import create_candidate_promoter
 from face_profile.enrollment.promotion import (
     CandidateNotReadyError,
@@ -108,6 +109,7 @@ def _parser() -> argparse.ArgumentParser:
     candidate_reject.add_argument("--reason", required=True)
     candidate_reject.add_argument("--reviewed-by")
     commands.add_parser("serve")
+    commands.add_parser("preflight")
     return parser
 
 
@@ -637,6 +639,28 @@ def main(
             + "\n"
         )
         database.close()
+        return 0
+
+    if args.command == "preflight":
+        preflight_report = run_preflight(config)
+        for check in preflight_report.checks:
+            # Human-readable name/status/detail go in the message, not
+            # `extra`: `_ALLOWED_CONTEXT` (logging.py) is a deliberately
+            # narrow allowlist of structured fields, and a check name or a
+            # local model path is neither sensitive nor worth extending it
+            # for -- the message is already redaction-scanned.
+            logger.info(
+                f"preflight check: {check.name}={check.status.value} ({check.detail})",
+                extra={"event_type": "PreflightCheck"},
+            )
+        if not preflight_report.ok:
+            configure_logging(level="ERROR", stream=error_output)
+            logging.getLogger("face_profile.cli").error(
+                "preflight checks failed",
+                extra={"event_type": "PreflightFailed", "error_code": "preflight_check_failed"},
+            )
+            return 3
+        logger.info("preflight checks passed", extra={"event_type": "PreflightCompleted"})
         return 0
 
     if args.command == "serve":

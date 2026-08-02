@@ -279,3 +279,146 @@ rather than real hardware — per this project's own rule (`CODING_STANDARDS.md`
 "Use real cameras in unit tests" is a prohibited pattern). If you run this on real
 Jetson hardware, please record what you found in a new or existing
 `docs/reports/M*.md` rather than assuming this guide reflects it.
+
+## 9. Full recognize + restore-settings path (`config/jetson-full.yaml`)
+
+This section covers the full opt-in path: USB webcam, face detection and
+tracking, quality/alignment, face recognition, manual-review candidate
+enrollment, active-user selection, and last-used preference restore/learning,
+using the tracked, credential-free `config/jetson-full.yaml`
+(see that file's own header comment and `docs/reports/M16.md` for exactly what
+it enables and why, and `docs/MODELS.md` for the two pinned models' exact
+provenance). Sections 1–8 above (Python/dependency/CUDA reality, `/dev/video*`
+permissions, headless notes) all still apply unchanged; this section only adds
+what is different for the full path.
+
+**No physical Jetson hardware, camera, ALSA mixer, or backlight device was
+available in the environment that produced this section**, exactly as stated in
+this guide's introduction and §8 above. Every command below was run for real against the repository's own
+test suite, a real downloaded-and-hashed copy of both pinned models, and
+`create_app()`/`preflight` against that real config — not against a real Jetson.
+Treat the exact commands as correct and already exercised; treat any specific
+claim about *Jetson* camera/audio/backlight behavior as unverified until you run
+it there yourself. In particular: **an HDMI or other external monitor commonly
+does not expose a `/sys/class/backlight` device at all** (that sysfs interface is
+for panels the kernel's `backlight` subsystem actually drives, typically an
+eDP/internal panel — an HDMI-connected display's brightness is controlled by the
+display itself, invisibly to the OS). If your Jetson is driving an external
+monitor over HDMI, expect `settings.backend: linux` to report brightness as
+`UNSUPPORTED` (not a bug — this is the same documented, non-fatal capability
+reporting as §7's table above) and only volume/ALSA to actually be restorable.
+
+### Step 1 — Provision and verify both pinned models
+
+```bash
+./scripts/provision-models.sh          # downloads into ./models/, idempotent,
+                                        # fails closed on any hash mismatch
+```
+
+Expect two lines ending in `downloaded and verified (sha256 ...)` the first time,
+or `already present and verified ...; skipping download.` on a re-run. This step
+requires outbound network access to `media.githubusercontent.com`; it never
+touches `data/`, volume, or brightness.
+
+### Step 2 — Run the non-mutating preflight check
+
+```bash
+uv run face-profile --config config/jetson-full.yaml preflight
+```
+
+This validates config, both model files' SHA-256, the camera device path/
+permissions, `amixer` capability, and backlight availability/writability —
+**without ever changing volume or brightness, and without opening the camera**
+(see `diagnostics/preflight.py`'s module docstring for exactly why each check is
+safe). Exit code `0` means every check passed; `3` means at least one failed
+(each check's line explains which and why). Do not proceed to Step 3 until this
+passes — on Jetson specifically, a `camera_device` or `settings_capabilities`
+failure here means Step 3 will not behave as expected either.
+
+### Step 3 — Launch the full service
+
+```bash
+./run-continuous.sh --config config/jetson-full.yaml
+```
+
+This starts the loopback-only (`127.0.0.1:8443`) REST/WebSocket API and UI, with
+the background pipeline worker running continuously (camera → detect → track →
+quality/align → embed → recognize → select active user → **load and apply that
+profile's saved settings** → observe/debounce/save real changes back). Leave this
+running in its own terminal/session (or wrap it in your own systemd unit per §5)
+for the rest of this section.
+
+### Step 4 — Open the UI through an SSH tunnel
+
+From your laptop (not the Jetson), forward the loopback port over SSH rather than
+changing `bind_host` (which the tracked config deliberately never does, per
+`config/jetson-full.yaml`'s header comment):
+
+```bash
+ssh -L 8443:127.0.0.1:8443 <user>@<jetson-hostname-or-ip>
+```
+
+Then open <http://127.0.0.1:8443/> in a browser on your laptop. The dashboard is
+an API client only (HERMES.md's "UI Mode — Secondary" rule) — everything it shows
+comes from the same loopback API you could also reach with `curl`.
+
+### Step 5 — Enroll and approve a profile
+
+Look at a working camera for a few seconds so the pipeline collects enough
+consistent, quality-accepted samples (`enrollment.minimum_samples: 5`,
+`enrollment.minimum_observation_seconds: 3.0` in the tracked config) to create an
+unknown candidate, then approve it through the UI's candidate-review page (or the
+CLI: `uv run face-profile --config config/jetson-full.yaml candidate list`, then
+`candidate approve --id <id> --reviewed-by <you>`). Automatic promotion is
+unconditionally rejected by config validation — every profile requires this
+explicit approval step, with no exception.
+
+### Step 6 — Change volume and/or brightness while recognized
+
+While the newly-approved profile is still the recognized active user, change the
+system volume and/or screen brightness through the Jetson's normal OS controls
+(not through this project's API). Give it a few seconds to register.
+
+### Step 7 — Wait for the debounce window, then confirm the save
+
+`preference_learning.debounce_seconds: 3.0` and `min_active_duration_seconds: 2.0`
+in the tracked config — wait at least that long with the value stable (not still
+being adjusted) before checking. Confirm the change was attributed and saved,
+either through the UI's profile settings view or:
+
+```bash
+uv run face-profile --config config/jetson-full.yaml profile show --id <profile-id>
+```
+
+or by inspecting the durable `SettingsChanged` event via the events API/UI.
+
+### Step 8 — Verify restoration on a later recognized session
+
+Step away so the active-user selector's `leaving_grace_seconds` elapses and the
+profile is no longer active (or restart `run-continuous.sh` entirely), then
+change the volume/brightness to a *different* value by hand, and come back into
+view of the camera. Once recognition re-stabilizes into `ACTIVE` for this
+profile, `ActiveProfileSettingsApplier` should apply the profile's *saved* value
+from Step 7 — i.e. the system volume/brightness should visibly change back to
+what was saved, once, without continuing to change on later frames (see
+`docs/reports/M16.md` and `settings/active_profile_applier.py`'s module
+docstring for exactly what "exactly once per activation" means). Confirm via the
+durable `SettingsApplied` event (or `SettingsApplyFailed`, if e.g. `amixer`
+genuinely failed — check the worker/API logs for the specific error) in the
+events API/UI, in addition to observing the actual volume/brightness change.
+
+### What this section does not and cannot claim
+
+Consistent with §8 above: none of Steps 3–8 have actually been performed against
+real Jetson hardware, a real camera, a real person, or a real ALSA/backlight
+device in the environment that produced this section. What *was* verified for
+real: `scripts/provision-models.sh` against the real upstream model files (exact
+byte-for-byte SHA-256 match, independently confirmed against two sources — see
+`docs/MODELS.md`); `uv run face-profile --config config/jetson-full.yaml
+preflight` actually run in this sandbox (correctly reporting `pass` for both
+models and `fail` for `camera_device`/`settings_capabilities`, since this sandbox
+has neither — see `docs/reports/M16.md` for the exact output); and
+`create_app(config/jetson-full.yaml)` building a fully-wired worker (recognizer,
+candidate manager, and `ActiveProfileSettingsApplier` all present) against a
+temporary database. If you run this section's steps on real Jetson hardware,
+please record what you found in a new or existing `docs/reports/M*.md`.

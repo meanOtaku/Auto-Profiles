@@ -158,6 +158,14 @@ class EmbeddingConfig(StrictModel):
     dimension: int = Field(default=128, ge=2, le=4096)
     input_width: int = Field(default=112, ge=32, le=1024)
     input_height: int = Field(default=112, ge=32, le=1024)
+    # Defaults match the InsightFace/ArcFace-family convention this adapter
+    # originally hardcoded ((pixel - 127.5) / 128). Other model families
+    # (e.g. OpenCV Zoo's SFace, whose ``FaceRecognizerSF::feature`` uses
+    # ``blobFromImage(img, 1, size, Scalar(0,0,0), swapRB=true)``, i.e. raw
+    # unscaled pixels) require different values, so these are configurable
+    # rather than fixed class constants.
+    input_mean: float = Field(default=127.5, ge=0.0, le=255.0)
+    input_scale: float = Field(default=1.0 / 128.0, gt=0.0, le=10.0)
     similarity_threshold: float = Field(default=0.5, ge=-1.0, le=1.0)
     similarity_margin: float = Field(default=0.05, ge=0.0, le=2.0)
 
@@ -175,6 +183,8 @@ class EmbeddingConfig(StrictModel):
             or self.dimension != 128
             or self.input_width != 112
             or self.input_height != 112
+            or self.input_mean != 127.5
+            or self.input_scale != 1.0 / 128.0
         ):
             raise ValueError("model identity and input-size fields are onnx-only controls")
         return self

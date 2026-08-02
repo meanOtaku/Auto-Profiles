@@ -128,14 +128,16 @@ class _OpenCvDnnEmbeddingBackend:
 
 
 class OnnxEmbeddingGenerator:
-    """Generate embeddings from an integrity-verified ONNX model via OpenCV DNN."""
+    """Generate embeddings from an integrity-verified ONNX model via OpenCV DNN.
 
-    # Standard ArcFace-family preprocessing: BGR input, mean-subtracted and
-    # scaled to approximately [-1, 1]. This matches the documented input
-    # contract for the configured model and is a fixed calibration, not a
-    # configurable recognition threshold.
-    _MEAN = (127.5, 127.5, 127.5)
-    _SCALE = 1.0 / 128.0
+    ``input_mean``/``input_scale`` are configuration, not a fixed class
+    constant: different model families disagree on preprocessing (e.g.
+    InsightFace/ArcFace-style models use ``(pixel - 127.5) / 128``, while
+    OpenCV Zoo's SFace, per ``cv::FaceRecognizerSF::feature``'s
+    ``blobFromImage(img, 1, size, Scalar(0,0,0), swapRB=true)``, uses raw
+    unscaled pixels). Hardcoding one convention would silently feed any
+    other model badly-scaled input and produce meaningless embeddings.
+    """
 
     def __init__(
         self,
@@ -147,6 +149,8 @@ class OnnxEmbeddingGenerator:
         dimension: int,
         input_width: int,
         input_height: int,
+        input_mean: float = 127.5,
+        input_scale: float = 1.0 / 128.0,
     ) -> None:
         self._backend = backend
         self._model_name = model_name
@@ -154,6 +158,8 @@ class OnnxEmbeddingGenerator:
         self._model_checksum = model_checksum
         self._dimension = dimension
         self._input_size = (input_width, input_height)
+        self._mean = (input_mean, input_mean, input_mean)
+        self._scale = input_scale
 
     def generate(self, aligned: AlignedFace) -> FaceEmbedding:
         """Preprocess, run inference, validate, and normalize the output."""
@@ -161,9 +167,9 @@ class OnnxEmbeddingGenerator:
         try:
             blob = cv2.dnn.blobFromImage(
                 aligned.image,
-                scalefactor=self._SCALE,
+                scalefactor=self._scale,
                 size=self._input_size,
-                mean=self._MEAN,
+                mean=self._mean,
                 swapRB=True,
                 crop=False,
             )
@@ -226,6 +232,8 @@ def create_embedding_generator(
         dimension=config.dimension,
         input_width=config.input_width,
         input_height=config.input_height,
+        input_mean=config.input_mean,
+        input_scale=config.input_scale,
     )
 
 

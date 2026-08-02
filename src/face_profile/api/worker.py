@@ -27,6 +27,7 @@ from face_profile.presence.active_user import ActiveUserSelector, PresenceCandid
 from face_profile.presence.builder import build_presence_candidate
 from face_profile.recognition.decision import RecognitionState
 from face_profile.recognition.recognizer import KnownPersonRecognizer
+from face_profile.settings.active_profile_applier import ActiveProfileSettingsApplier
 from face_profile.settings.last_used_service import LastUsedPreferenceService
 from face_profile.vision.alignment import FaceAligner
 from face_profile.vision.detection import FaceDetector
@@ -71,6 +72,7 @@ class PipelineWorker:
         recognizer: KnownPersonRecognizer | None = None,
         candidate_manager: CandidateManager | None = None,
         active_user_selector: ActiveUserSelector | None = None,
+        settings_applier: ActiveProfileSettingsApplier | None = None,
         preference_service: LastUsedPreferenceService | None = None,
         passive_liveness_evaluator: PassiveLivenessEvaluator | None = None,
         profiles: ProfileRepository | None = None,
@@ -88,6 +90,7 @@ class PipelineWorker:
         self._recognizer = recognizer
         self._candidate_manager = candidate_manager
         self._active_user_selector = active_user_selector
+        self._settings_applier = settings_applier
         self._preference_service = preference_service
         self._passive_liveness_evaluator = passive_liveness_evaluator
         self._profiles = profiles
@@ -217,6 +220,8 @@ class PipelineWorker:
 
         if self._active_user_selector is not None:
             active_decision = self._active_user_selector.update(tuple(presence_candidates), now=now)
+            if self._settings_applier is not None:
+                self._settings_applier.sync(active=active_decision)
             if self._preference_service is not None:
                 self._preference_service.observe(active=active_decision, now=now)
 

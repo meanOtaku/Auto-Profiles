@@ -230,3 +230,52 @@ def test_cli_reports_cleanup_failure_when_detection_and_close_both_fail(
     assert event["event_type"] == "DetectionFailed"
     assert event["error_code"] == "detection_cleanup_failed"
     assert "private" not in stderr.getvalue().lower()
+
+
+def test_cli_preflight_passes_for_an_all_disabled_config(tmp_path: Path) -> None:
+    from face_profile.cli import main
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "camera:\n  enabled: false\nlogging:\n  level: INFO\nsettings:\n  backend: mock\n",
+        encoding="utf-8",
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    exit_code = main(["--config", str(config), "preflight"], stdout=stdout, stderr=stderr)
+
+    assert exit_code == 0
+    events = [json.loads(line) for line in stdout.getvalue().splitlines()]
+    check_events = [e for e in events if e["event_type"] == "PreflightCheck"]
+    assert len(check_events) == 4
+    assert all("=skipped" in e["message"] for e in check_events)
+    assert events[-1]["event_type"] == "PreflightCompleted"
+    assert stderr.getvalue() == ""
+
+
+def test_cli_preflight_fails_closed_when_a_pinned_model_is_missing(tmp_path: Path) -> None:
+    from face_profile.cli import main
+
+    missing_model = tmp_path / "missing.onnx"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "camera:\n  enabled: false\n"
+        "detection:\n"
+        "  enabled: true\n"
+        "  backend: yunet\n"
+        f"  model_path: {missing_model}\n"
+        f"  model_sha256: {'a' * 64}\n"
+        "logging:\n  level: INFO\n"
+        "settings:\n  backend: mock\n",
+        encoding="utf-8",
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    exit_code = main(["--config", str(config), "preflight"], stdout=stdout, stderr=stderr)
+
+    assert exit_code == 3
+    event = json.loads(stderr.getvalue())
+    assert event["event_type"] == "PreflightFailed"
+    assert event["error_code"] == "preflight_check_failed"

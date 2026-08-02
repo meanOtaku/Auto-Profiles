@@ -5,6 +5,7 @@ from __future__ import annotations
 from face_profile.config import PreferenceLearningConfig, SettingsConfig
 from face_profile.database.repository import ProfileDatabase
 from face_profile.settings import DeviceSettings, MockSettingsAdapter, SettingsAdapter
+from face_profile.settings.active_profile_applier import ActiveProfileSettingsApplier
 from face_profile.settings.last_used_service import LastUsedPreferenceService
 from face_profile.settings.linux import LinuxSettingsAdapter
 from face_profile.settings.preference_learning import PreferenceLearner
@@ -50,3 +51,19 @@ def create_last_used_preference_service(
         self_application_tolerance_seconds=config.self_application_tolerance_seconds,
     )
     return LastUsedPreferenceService(adapter=adapter, learner=learner, database=database)
+
+
+def create_active_profile_settings_applier(
+    *, adapter: RateLimitedSettingsAdapter, database: ProfileDatabase | None
+) -> ActiveProfileSettingsApplier | None:
+    """Build the settings-restore bridge, or ``None`` without a database.
+
+    Unlike preference *learning*, restoring a recognized profile's stored
+    settings has no separate opt-in: HERMES.md's pipeline treats "load and
+    apply active profile settings" as a mandatory step whenever a profile
+    database and an active-user selection exist, not an optional feature.
+    """
+
+    if database is None:
+        return None
+    return ActiveProfileSettingsApplier(adapter=adapter, database=database)
