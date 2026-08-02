@@ -196,6 +196,26 @@ on a headless Jetson.
   config from §3–§4 above instead, pass it explicitly:
   `./run-continuous.sh --config data/local.yaml`.
 
+  For a tracked (not private/gitignored), credential-free baseline that continuously
+  captures the USB webcam, runs integrity-pinned YuNet detection, and tracks faces —
+  all exposed only through the loopback-only API, with the profile database,
+  recognition, enrollment, liveness, the UI, and real host settings all still
+  disabled — use the repository-shipped `config/jetson-webcam.yaml` instead:
+
+  ```bash
+  ./run-continuous.sh --config config/jetson-webcam.yaml
+  ```
+
+  **Before running this**, the YuNet model must be downloaded and integrity-verified
+  into `models/face_detection_yunet_2023mar.onnx` — see
+  `docs/RUNNING_ON_UBUNTU.md` §6 "YuNet face detector model" for the source URL and
+  the exact SHA-256 this config pins. `model_sha256` is checked against the file's
+  bytes when the detector actually loads (i.e. once `serve` starts handling frames),
+  not at config-load time, so a missing or mismatched model file will not fail until
+  then. `config/jetson-webcam.yaml` still does **not** enable recognition,
+  enrollment, or the profile database — it only detects and tracks faces, it does
+  not identify anyone.
+
 ## 6. Verification commands (run these — they don't need a camera)
 
 ```bash
@@ -203,7 +223,8 @@ uv sync --locked --all-groups                             # confirm aarch64 whee
 uv run face-profile --config config/default.yaml check     # hardware-free lifecycle check, §2
 uv run pytest tests/unit/test_camera_diagnostics.py \
               tests/unit/test_frame_sources.py \
-              tests/unit/test_headless_safety.py -q        # camera/platform/headless-safety tests
+              tests/unit/test_headless_safety.py \
+              tests/integration/test_jetson_webcam_config.py -q  # camera/platform/config-safety tests
 uv run pytest                                               # full suite (hardware-free, see docs/RUNNING_ON_UBUNTU.md)
 uv run mypy src tests
 uv run ruff check .

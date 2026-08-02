@@ -160,13 +160,17 @@ vision pipeline.
 
 ## 5. Use a private local config — don't edit the tracked defaults
 
-`config/default.yaml` and `config/continuous.yaml` are the only config files tracked
-by git. `default.yaml` must stay fully disabled — it is what `./run.sh` and CI both
-rely on as the safe baseline. `continuous.yaml` must stay loopback-only with no
-`auth_token` — it is what `./run-continuous.sh` relies on as its safe baseline; every
-other capability in it must stay disabled/mock like `default.yaml`. **Don't edit
-either file** to add camera/database/recognition access, a non-loopback `bind_host`,
-or an `auth_token`.
+`config/default.yaml`, `config/continuous.yaml`, and `config/jetson-webcam.yaml` are
+the only config files tracked by git. `default.yaml` must stay fully disabled — it is
+what `./run.sh` and CI both rely on as the safe baseline. `continuous.yaml` must stay
+loopback-only with no `auth_token` — it is what `./run-continuous.sh` relies on as its
+safe baseline; every other capability in it must stay disabled/mock like
+`default.yaml`. `jetson-webcam.yaml` is the same loopback-only-API baseline with
+`camera`/`detection`/`tracking` additionally enabled (USB webcam capture +
+integrity-pinned YuNet + tracking only — see `docs/RUNNING_ON_JETSON.md` §5); it must
+also stay loopback-only with no `auth_token`, and every capability beyond those three
+sections must stay disabled/mock. **Don't edit any of these three tracked files** to
+add database/recognition access, a non-loopback `bind_host`, or an `auth_token`.
 
 Instead, copy it to a config that git does not track, and point `--config` /
 `FACE_PROFILE_CONFIG` at that copy:

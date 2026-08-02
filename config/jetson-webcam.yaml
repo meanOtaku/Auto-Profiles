@@ -1,0 +1,183 @@
+# Safe, loopback-only continuous USB-webcam detection+tracking config for
+# ./run-continuous.sh on a Jetson (see docs/RUNNING_ON_JETSON.md section 5).
+#
+# This is the credential-free generic content promoted from a private Jetson
+# local config: it enables camera capture from a USB UVC webcam, integrity-
+# pinned YuNet face detection, and in-memory geometric tracking, exposed only
+# through the loopback-only REST/WebSocket API (no auth_token required,
+# exactly like config/continuous.yaml). It does NOT enable the profile
+# database, recognition, enrollment, active-user selection, preference
+# learning, the UI, liveness, or real host-setting changes -- those all
+# remain disabled/mock, exactly as in config/default.yaml, until you opt in
+# from your own private config (see docs/RUNNING_ON_UBUNTU.md section 5-6).
+#
+# Before using this file, download and integrity-verify the pinned YuNet
+# model into models/face_detection_yunet_2023mar.onnx -- see
+# docs/RUNNING_ON_UBUNTU.md section 6 "YuNet face detector model" for the
+# source URL and verification command. model_sha256 is checked against the
+# file's bytes when the detector is actually loaded (serve/detect), not at
+# config-load time, so a missing or mismatched file only fails then. Do not
+# add an auth_token or a non-loopback bind_host to this tracked file; use a
+# gitignored private config instead (see docs/RUNNING_ON_UBUNTU.md section 5).
+
+camera:
+  # A standard USB UVC/V4L2 webcam; opt-in only, no path required.
+  enabled: true
+  source: webcam
+  path: null
+  device_index: 0
+  retry_attempts: 2
+
+detection:
+  # Integrity-pinned YuNet: the loader verifies model_sha256 against the
+  # file's bytes before OpenCV ever loads it, per docs/RUNBOOK.md.
+  enabled: true
+  backend: yunet
+  model_path: models/face_detection_yunet_2023mar.onnx
+  model_sha256: 8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
+  confidence_threshold: 0.5
+  nms_threshold: 0.3
+  top_k: 5000
+
+tracking:
+  # M3 in-memory geometric tracking, enabled so detections are attributed
+  # across frames without any recognition/persistence.
+  enabled: true
+  max_missing_frames: 5
+  min_iou: 0.1
+  max_center_distance: 2.0
+  max_samples_per_track: 20
+  max_tracks: 100
+
+quality:
+  # M4 quality filtering and alignment remain disabled until explicitly enabled.
+  enabled: false
+  min_face_width: 40.0
+  min_face_height: 40.0
+  min_sharpness_variance: 60.0
+  min_mean_brightness: 40.0
+  max_mean_brightness: 215.0
+  max_overexposed_fraction: 0.15
+  max_roll_degrees: 25.0
+  max_yaw_asymmetry: 0.35
+  max_landmark_margin_violation: 0.05
+  aligned_output_width: 112
+  aligned_output_height: 112
+  best_sample_max_tracks: 100
+
+embedding:
+  # M5 embedding generation stays disabled and mock-backed: no biometric
+  # template is ever produced by this tracked config.
+  enabled: false
+  backend: mock
+  model_path: null
+  model_sha256: null
+  model_name: mock-content-hash
+  model_version: "1"
+  dimension: 128
+  input_width: 112
+  input_height: 112
+  similarity_threshold: 0.5
+  similarity_margin: 0.05
+
+database:
+  # M6 persistent, encrypted profile storage stays disabled: no biometric
+  # data is ever written to disk by this tracked config.
+  enabled: false
+  path: data/face_profile.sqlite3
+  key_path: data/face_profile.key
+  retention_days: 30
+  maximum_embeddings_per_profile: 50
+
+recognition:
+  # M7 known-person recognition stays disabled; it additionally requires
+  # embedding.enabled, which this config keeps off.
+  enabled: false
+  min_consistent_observations: 3
+  confirmation_window_seconds: 5.0
+  max_tracks: 100
+  embedding_cache_refresh_seconds: 2.0
+
+enrollment:
+  # M8 candidate enrollment stays disabled. automatic_promotion is
+  # unconditionally rejected by config validation regardless (ADR 0013).
+  enabled: false
+  automatic_promotion: false
+  minimum_samples: 5
+  minimum_observation_seconds: 3.0
+  minimum_quality: 0.65
+  candidate_expiry_seconds: 30.0
+  maximum_samples_per_candidate: 50
+  default_name_prefix: Unknown
+  minimum_internal_consistency: 0.5
+  maximum_internal_similarity: 0.9999
+  duplicate_profile_threshold: 0.5
+  duplicate_candidate_threshold: 0.5
+  near_frontal_max_roll_degrees: 12.0
+  near_frontal_max_yaw_asymmetry: 0.15
+  candidate_retention_days: 7
+
+active_user:
+  # M10 active-user selection stays disabled by default.
+  enabled: false
+  face_size_weight: 0.3
+  centre_weight: 0.2
+  duration_weight: 0.2
+  confidence_weight: 0.2
+  priority_weight: 0.1
+  duration_saturation_seconds: 5.0
+  priority_normalization_scale: 100.0
+  switch_margin: 0.1
+  stability_duration_seconds: 2.0
+  switch_cooldown_seconds: 5.0
+  min_visible_duration_seconds: 0.5
+  leaving_grace_seconds: 1.0
+
+preference_learning:
+  # M11 last-used-preference learning stays disabled by default.
+  enabled: false
+  debounce_seconds: 3.0
+  min_active_duration_seconds: 2.0
+  self_application_tolerance_seconds: 2.0
+
+api:
+  # Loopback-only REST/WebSocket API so run-continuous.sh's `serve` has
+  # something to expose the webcam+detection+tracking worker through.
+  # Stays on loopback with no auth_token, which config validation allows
+  # only because bind_host is loopback (APIConfig.validate_fail_closed, ADR
+  # 0017). Do not change bind_host in this tracked file; use a private
+  # config for LAN/non-loopback exposure and set a real auth_token.
+  enabled: true
+  bind_host: 127.0.0.1
+  bind_port: 8443
+  auth_token: null
+  rate_limit_per_minute: 120
+  max_request_body_bytes: 1000000
+  events_page_size: 50
+  worker_poll_interval_seconds: 0.1
+  detection_interval_frames: 1
+
+ui:
+  # M13 optional dashboard stays disabled by default.
+  enabled: false
+
+liveness:
+  # M14 liveness stays disabled by default; see docs/reports/M14.md.
+  enabled: false
+  minimum_passive_score: 0.5
+  high_frequency_energy_min: 0.02
+  high_frequency_energy_max: 0.35
+  minimum_specular_variance: 5.0
+  require_active_challenge: false
+  active_challenge_min_yaw_delta: 0.2
+
+logging:
+  level: INFO
+
+settings:
+  # M9 keeps the in-memory mock adapter; real host-setting changes require
+  # backend: linux from your own private config.
+  backend: mock
+  volume: 50
+  brightness: 50
+  min_apply_interval_seconds: 0.2
