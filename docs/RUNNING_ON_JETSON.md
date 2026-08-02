@@ -360,7 +360,14 @@ ssh -L 8443:127.0.0.1:8443 <user>@<jetson-hostname-or-ip>
 
 Then open <http://127.0.0.1:8443/> in a browser on your laptop. The dashboard is
 an API client only (HERMES.md's "UI Mode — Secondary" rule) — everything it shows
-comes from the same loopback API you could also reach with `curl`.
+comes from the same loopback API you could also reach with `curl`. The tracked
+`config/jetson-full.yaml` also turns on `ui.webcam_preview_enabled`, so the
+dashboard's "Webcam preview" section should start polling
+`/api/v1/preview/latest.jpg` once you click Connect/Refresh, showing a
+bounded-rate (~5 FPS), server-annotated snapshot with a colored box and label
+per tracked face (green + display name/profile UUID once recognized, amber +
+deterministic candidate name/UUID or "Unknown" otherwise, red if a liveness
+check just failed). It stops polling while the browser tab is hidden.
 
 ### Step 5 — Let a qualified candidate promote automatically
 
@@ -417,8 +424,13 @@ events API/UI, in addition to observing the actual volume/brightness change.
 
 Consistent with §8 above: none of Steps 3–8 have actually been performed against
 real Jetson hardware, a real camera, a real person, or a real ALSA/backlight
-device in the environment that produced this section. What *was* verified for
-real: `scripts/provision-models.sh` against the real upstream model files (exact
+device in the environment that produced this section. That includes Step 4's
+webcam preview: its annotated-JPEG generation, drawing, and encoding path was
+verified only by static review, `ruff`, and `mypy` in this session — it was
+never exercised at runtime against any frame source (mock or real), never
+opened in a real browser, and no claim is made that it renders correctly,
+looks right, or performs at ~5 FPS anywhere, on Jetson hardware or otherwise.
+What *was* verified for real: `scripts/provision-models.sh` against the real upstream model files (exact
 byte-for-byte SHA-256 match, independently confirmed against two sources — see
 `docs/MODELS.md`); `uv run face-profile --config config/jetson-full.yaml
 preflight` actually run in this sandbox (correctly reporting `pass` for both

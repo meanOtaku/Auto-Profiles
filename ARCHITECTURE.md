@@ -201,6 +201,8 @@ Must not contain domain decisions.
 
 M12 implements this layer with `api/`: FastAPI `app.py` wires M6–M11 into one process; `routes.py` implements HERMES's full `/api/v1` surface plus `WS /events/live` (poll-based, not true pub/sub); `auth.py`/`rate_limit.py` provide bearer-token auth and fixed-window rate limiting; `worker.py`'s `PipelineWorker` is a simple threaded polling loop (not yet the bounded-queue architecture §5 describes, deferred to M15) running detect→track→quality→align→embed→recognize→enroll→select-active-user→learn-preferences when `camera.enabled`. `APIConfig` fails closed at configuration-load time for non-loopback binding without an explicit token.
 
+M13 adds `GET /api/v1/preview/latest.jpg`, an authenticated (same bearer dependency, no URL/query token), versioned snapshot endpoint returning the pipeline worker's single latest annotated JPEG when `ui.webcam_preview_enabled` is set. It maps disabled/no-worker/no-frame-yet to distinct 404/409/503 responses (see `routes.py`'s docstring) and always sets `Cache-Control: no-store`.
+
 ### 4.9 UI Layer
 
 Responsibilities:
@@ -211,6 +213,8 @@ Responsibilities:
 - Show service health and events
 
 The UI must remain replaceable.
+
+M13's dashboard additionally polls the preview endpoint on a bounded client-side timer (started after Connect/Refresh, paused while the tab is hidden, never overlapping in-flight requests) and renders the returned JPEG through a revoked-on-replace object URL. All annotation (boxes, known/unknown/liveness-failed color, display-name/UUID or candidate-name/UUID text) happens server-side in `PipelineWorker`; the dashboard draws nothing and makes no recognition or enrollment decision, preserving HERMES.md's "UI is a plain API client" rule.
 
 ## 5. Runtime Processes
 
@@ -430,7 +434,11 @@ The camera worker should retry recoverable disconnections. Database-integrity er
 - Store only the minimum number of samples required.
 - Prefer local processing.
 - Restrict file and database permissions.
-- Do not expose raw camera streams by default.
+- Do not expose raw camera streams by default. The M13 annotated webcam
+  preview (`ui.webcam_preview_enabled`) is not a raw stream -- it is a
+  bounded-rate, server-drawn, single-latest-frame JPEG snapshot, disabled by
+  default, authenticated the same as every other route, and off in every
+  tracked config except `config/jetson-full.yaml`.
 - Protect administrative API operations.
 - Log identifiers rather than full biometric vectors.
 - Provide export and deletion operations.

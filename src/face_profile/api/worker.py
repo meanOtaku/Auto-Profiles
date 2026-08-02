@@ -17,25 +17,103 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import cast
 from uuid import UUID
 
-from face_profile.camera import EndOfFrames, Frame, FrameSourceLifecycle, TemporaryFrameSourceError
+import cv2
+
+from face_profile.camera import (
+    EndOfFrames,
+    Frame,
+    FrameSourceLifecycle,
+    ImageArray,
+    TemporaryFrameSourceError,
+)
+from face_profile.database.models import Candidate, CandidateStatus
 from face_profile.database.repository import ProfileNotFoundError, ProfileRepository
 from face_profile.enrollment.manager import CandidateManager
 from face_profile.liveness.passive import PassiveLivenessEvaluator
 from face_profile.presence.active_user import ActiveUserSelector, PresenceCandidate
 from face_profile.presence.builder import build_presence_candidate
-from face_profile.recognition.decision import RecognitionState
+from face_profile.recognition.decision import RecognitionDecision, RecognitionState
 from face_profile.recognition.recognizer import KnownPersonRecognizer
 from face_profile.settings.active_profile_applier import ActiveProfileSettingsApplier
 from face_profile.settings.last_used_service import LastUsedPreferenceService
 from face_profile.vision.alignment import FaceAligner
-from face_profile.vision.detection import FaceDetector
+from face_profile.vision.detection import BoundingBox, FaceDetector
 from face_profile.vision.embedding import EmbeddingGenerator
 from face_profile.vision.quality import QualityEvaluator
 from face_profile.vision.tracking import FaceTracker, TrackedFace
 
 logger = logging.getLogger("face_profile.api.worker")
+
+_PREVIEW_LABEL_MAX_LENGTH = 80
+
+
+class PreviewCategory(StrEnum):
+    """Visual status category drawn for one tracked face in the preview overlay."""
+
+    KNOWN = "known"
+    UNKNOWN = "unknown"
+    LIVENESS_FAILED = "liveness_failed"
+
+
+_PREVIEW_COLORS_BGR: dict[PreviewCategory, tuple[int, int, int]] = {
+    PreviewCategory.KNOWN: (0, 170, 0),
+    PreviewCategory.UNKNOWN: (0, 200, 200),
+    PreviewCategory.LIVENESS_FAILED: (0, 0, 220),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _PreviewLabel:
+    """One drawable box/label for the preview overlay; ``text`` is pre-sanitized."""
+
+    bounding_box: BoundingBox
+    text: str
+    category: PreviewCategory
+
+
+def _sanitize_preview_text(text: str) -> str:
+    """Bound and clean text before it is drawn on the preview overlay.
+
+    Display names and candidate temporary names come from data an operator
+    or the deterministic naming scheme controls, not from an untrusted
+    network caller, but neither is length- or charset-bounded upstream (see
+    ``database/repository.py``'s ``create``/``update``, which only reject an
+    empty name). Without this, a hostile or absurdly long name could bloat
+    the annotated frame or draw incorrectly; see CODING_STANDARDS.md §18.
+    """
+
+    printable = "".join(character for character in text if character.isprintable())
+    collapsed = " ".join(printable.split())
+    if len(collapsed) > _PREVIEW_LABEL_MAX_LENGTH:
+        collapsed = collapsed[: _PREVIEW_LABEL_MAX_LENGTH - 1] + "…"
+    return collapsed or "Unknown"
+
+
+def _draw_preview_label(image: ImageArray, label: _PreviewLabel, *, scale: float) -> None:
+    height, width = image.shape[:2]
+    if height <= 0 or width <= 0:
+        return
+    box = label.bounding_box
+    x1 = int(min(max(round(box.x * scale), 0), width - 1))
+    y1 = int(min(max(round(box.y * scale), 0), height - 1))
+    x2 = int(min(max(round((box.x + box.width) * scale), 0), width - 1))
+    y2 = int(min(max(round((box.y + box.height) * scale), 0), height - 1))
+    color = _PREVIEW_COLORS_BGR[label.category]
+    cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+    text_y = y1 - 6 if y1 - 6 > 10 else min(y1 + 16, height - 1)
+    cv2.putText(
+        image,
+        label.text,
+        (x1, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        color,
+        1,
+        cv2.LINE_AA,
+    )
 
 
 class WorkerState(StrEnum):
@@ -58,7 +136,16 @@ class WorkerHealth:
 
 
 class PipelineWorker:
-    """Runs the detect->track->quality->align->embed->recognize->... loop."""
+    """Runs the detect->track->quality->align->embed->recognize->... loop.
+
+    When ``preview_enabled`` is set, each frame that runs a real detection
+    (not a ``predict_only`` M15 skip) may also render a bounded-rate,
+    max-width-downscaled, annotated JPEG copy of that frame -- boxes and
+    privacy-safe labels only -- into a single-slot in-memory snapshot
+    (:meth:`latest_preview_jpeg`), always replacing rather than
+    accumulating. The pipeline's own source frame is never mutated for
+    this: every draw happens on ``frame.image.copy()``.
+    """
 
     def __init__(
         self,
@@ -78,9 +165,17 @@ class PipelineWorker:
         profiles: ProfileRepository | None = None,
         poll_interval_seconds: float = 0.1,
         detection_interval_frames: int = 1,
+        preview_enabled: bool = False,
+        preview_jpeg_quality: int = 70,
+        preview_max_fps: float = 5.0,
+        preview_max_width: int = 640,
     ) -> None:
         if detection_interval_frames < 1:
             raise ValueError("detection_interval_frames must be positive")
+        if preview_max_fps <= 0.0:
+            raise ValueError("preview_max_fps must be positive")
+        if preview_max_width < 1:
+            raise ValueError("preview_max_width must be positive")
         self._frame_source = frame_source
         self._detector = detector
         self._tracker = tracker
@@ -96,6 +191,10 @@ class PipelineWorker:
         self._profiles = profiles
         self._poll_interval_seconds = poll_interval_seconds
         self._detection_interval_frames = detection_interval_frames
+        self._preview_enabled = preview_enabled
+        self._preview_jpeg_quality = preview_jpeg_quality
+        self._preview_max_width = preview_max_width
+        self._preview_min_interval_seconds = 1.0 / preview_max_fps
 
         self._state = WorkerState.STOPPED
         self._frames_processed = 0
@@ -106,6 +205,8 @@ class PipelineWorker:
         self._thread: threading.Thread | None = None
         self._known_track_ids: set[int] = set()
         self._lock = threading.Lock()
+        self._preview_last_generated_monotonic = 0.0
+        self._latest_preview_jpeg: bytes | None = None
 
     def start(self) -> None:
         """Open the frame source and start the background thread."""
@@ -143,6 +244,9 @@ class PipelineWorker:
         finally:
             with self._lock:
                 self._state = WorkerState.STOPPED
+                # A stopped worker produces no new frames; drop the stale
+                # snapshot rather than keep serving it indefinitely.
+                self._latest_preview_jpeg = None
 
     def health(self) -> WorkerHealth:
         with self._lock:
@@ -152,6 +256,18 @@ class PipelineWorker:
                 frames_detected=self._frames_detected,
                 last_error=self._last_error,
             )
+
+    def latest_preview_jpeg(self) -> bytes | None:
+        """Return the most recently generated annotated JPEG snapshot, if any.
+
+        The returned ``bytes`` object is immutable and safe to hand directly
+        to a caller: internal state is always replaced wholesale under the
+        lock, never mutated in place, so no caller can observe a partially
+        written frame and no mutable array ever leaves this class.
+        """
+
+        with self._lock:
+            return self._latest_preview_jpeg
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -213,10 +329,14 @@ class PipelineWorker:
         self._known_track_ids = current_track_ids
 
         presence_candidates: list[PresenceCandidate] = []
+        preview_labels: list[_PreviewLabel] = []
         for tracked in tracked_faces:
-            candidate = self._process_track(tracked, frame=frame, now=now)
-            if candidate is not None:
-                presence_candidates.append(candidate)
+            presence, label = self._process_track(tracked, frame=frame, now=now)
+            if presence is not None:
+                presence_candidates.append(presence)
+            preview_labels.append(label)
+
+        self._generate_preview(frame, preview_labels)
 
         if self._active_user_selector is not None:
             active_decision = self._active_user_selector.update(tuple(presence_candidates), now=now)
@@ -230,13 +350,15 @@ class PipelineWorker:
 
     def _process_track(
         self, tracked: TrackedFace, *, frame: Frame, now: datetime
-    ) -> PresenceCandidate | None:
+    ) -> tuple[PresenceCandidate | None, _PreviewLabel]:
+        box = tracked.detection.bounding_box
+        unknown_label = _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
         if self._quality_evaluator is None or self._aligner is None or self._embedder is None:
-            return None
+            return None, unknown_label
         detection = tracked.detection
         quality = self._quality_evaluator.evaluate(frame, detection)
         if not quality.accepted:
-            return None
+            return None, unknown_label
         aligned = self._aligner.align(frame, detection)
         embedding = self._embedder.generate(aligned)
         liveness_passed = True
@@ -244,11 +366,12 @@ class PipelineWorker:
             liveness_passed = self._passive_liveness_evaluator.evaluate(aligned).passed
 
         if self._recognizer is None:
-            return None
+            return None, unknown_label
         decision = self._recognizer.recognize(tracked.track_id, embedding, observed_at=now)
 
+        candidate: Candidate | None = None
         if decision.state is RecognitionState.UNKNOWN and self._candidate_manager is not None:
-            self._candidate_manager.observe_unknown(
+            candidate = self._candidate_manager.observe_unknown(
                 tracked.track_id,
                 embedding,
                 detection.landmarks,
@@ -257,14 +380,18 @@ class PipelineWorker:
                 liveness_passed=liveness_passed,
             )
 
+        preview_label = self._build_preview_label(
+            box, decision=decision, candidate=candidate, liveness_passed=liveness_passed
+        )
+
         if decision.state is not RecognitionState.CONFIRMED_MATCH or decision.profile_id is None:
-            return None
+            return None, preview_label
         if self._active_user_selector is None:
-            return None
+            return None, preview_label
         profile_priority = self._lookup_profile_priority(decision.profile_id)
         if profile_priority is None:
-            return None
-        return build_presence_candidate(
+            return None, preview_label
+        presence = build_presence_candidate(
             tracked,
             decision,
             frame_width=float(frame.image.shape[1]),
@@ -272,6 +399,58 @@ class PipelineWorker:
             profile_priority=profile_priority,
             visible_duration_seconds=tracked.age_frames * self._poll_interval_seconds,
         )
+        return presence, preview_label
+
+    def _build_preview_label(
+        self,
+        box: BoundingBox,
+        *,
+        decision: RecognitionDecision,
+        candidate: Candidate | None,
+        liveness_passed: bool,
+    ) -> _PreviewLabel:
+        """Choose the drawn label/color for one track's current observation.
+
+        Confirmed recognition always wins (a stable, temporally-confirmed
+        identity). Next, a candidate this same call just promoted (M8
+        automatic promotion) is shown with its brand-new permanent profile
+        UUID immediately, before the separate M7 temporal-confirmation cache
+        would otherwise catch up on a later frame. A liveness failure on an
+        unconfirmed track is shown in its own color. Anything else --
+        including AMBIGUOUS/POSSIBLE_MATCH observations that have not yet
+        accumulated a candidate -- stays privacy-safe "Unknown", per
+        HERMES.md's unknown-person policy: no identity is ever implied
+        before it is actually established.
+        """
+
+        if decision.state is RecognitionState.CONFIRMED_MATCH and decision.profile_id is not None:
+            display_name = self._lookup_profile_display_name(decision.profile_id)
+            if display_name is not None:
+                text = _sanitize_preview_text(f"{display_name} ({decision.profile_id})")
+                return _PreviewLabel(box, text, PreviewCategory.KNOWN)
+        if (
+            candidate is not None
+            and candidate.status is CandidateStatus.PROMOTED
+            and candidate.promoted_profile_id is not None
+        ):
+            display_name = (
+                self._lookup_profile_display_name(candidate.promoted_profile_id)
+                or candidate.temporary_name
+            )
+            text = _sanitize_preview_text(f"{display_name} ({candidate.promoted_profile_id})")
+            return _PreviewLabel(box, text, PreviewCategory.KNOWN)
+        if not liveness_passed:
+            base = (
+                f"{candidate.temporary_name} ({candidate.id})"
+                if candidate is not None
+                else "Unknown"
+            )
+            text = _sanitize_preview_text(f"{base} - liveness failed")
+            return _PreviewLabel(box, text, PreviewCategory.LIVENESS_FAILED)
+        if candidate is not None:
+            text = _sanitize_preview_text(f"{candidate.temporary_name} ({candidate.id})")
+            return _PreviewLabel(box, text, PreviewCategory.UNKNOWN)
+        return _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
 
     def _lookup_profile_priority(self, profile_id: UUID) -> int | None:
         if self._profiles is None:
@@ -280,3 +459,62 @@ class PipelineWorker:
             return self._profiles.get(profile_id).priority
         except ProfileNotFoundError:
             return None
+
+    def _lookup_profile_display_name(self, profile_id: UUID) -> str | None:
+        if self._profiles is None:
+            return None
+        try:
+            return self._profiles.get(profile_id).display_name
+        except ProfileNotFoundError:
+            return None
+
+    def _generate_preview(self, frame: Frame, labels: list[_PreviewLabel]) -> None:
+        """Render at most one bounded-rate annotated JPEG snapshot per call.
+
+        Always draws on ``frame.image.copy()`` -- the pipeline's source
+        frame is never mutated -- and always replaces the single stored
+        snapshot under ``self._lock`` rather than appending to anything, so
+        memory use stays bounded to one encoded frame regardless of run
+        length. Silently returns when preview is disabled or rate-limited.
+        Any drawing or encoding error (including a non-3-channel source
+        frame reaching a BGR-color ``cv2.rectangle``/``cv2.putText`` call)
+        is caught and logged, never re-raised: a broken preview must never
+        fail the pipeline thread, since that would stop recognition,
+        enrollment, active-user selection, and settings restore too, not
+        just the debug preview.
+        """
+
+        if not self._preview_enabled:
+            return
+        now_monotonic = time.monotonic()
+        elapsed_since_last = now_monotonic - self._preview_last_generated_monotonic
+        if elapsed_since_last < self._preview_min_interval_seconds:
+            return
+        self._preview_last_generated_monotonic = now_monotonic
+
+        try:
+            annotated: ImageArray = frame.image.copy()
+            height, width = annotated.shape[:2]
+            scale = 1.0
+            if width > self._preview_max_width:
+                scale = self._preview_max_width / width
+                new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+                annotated = cast(
+                    ImageArray, cv2.resize(annotated, new_size, interpolation=cv2.INTER_AREA)
+                )
+            for label in labels:
+                _draw_preview_label(annotated, label, scale=scale)
+            encode_ok, buffer = cv2.imencode(
+                ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), self._preview_jpeg_quality]
+            )
+            if not encode_ok:
+                return
+            encoded = buffer.tobytes()
+        except Exception as error:
+            logger.warning(
+                "preview generation failed; leaving previous snapshot in place",
+                extra={"event_type": "PreviewGenerationFailed", "error_code": type(error).__name__},
+            )
+            return
+        with self._lock:
+            self._latest_preview_jpeg = encoded

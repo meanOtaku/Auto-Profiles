@@ -24,6 +24,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import Response
 
 from face_profile.api.auth import check_websocket_auth, require_auth
 from face_profile.api.schemas import (
@@ -125,6 +126,54 @@ async def get_metrics(request: Request) -> MetricsResponse:
         active_profile_count=active_profiles,
         collecting_candidate_count=collecting,
         ready_for_review_candidate_count=ready,
+    )
+
+
+_PREVIEW_CACHE_CONTROL = "no-store, no-cache, must-revalidate"
+
+
+@router.get("/preview/latest.jpg", dependencies=[Depends(require_auth)])
+async def get_latest_preview(request: Request) -> Response:
+    """Return the pipeline worker's latest annotated preview JPEG, if any.
+
+    Authenticated the same way as every other route (bearer header via
+    ``require_auth``; never a URL/query token, so it can never leak into
+    logs, browser history, or a Referer header). Exact status mapping,
+    chosen so a dashboard can distinguish "will never work here" from
+    "transiently not ready yet":
+
+    - 404 ``preview_disabled``: ``ui.webcam_preview_enabled`` is False for
+      this deployment's configuration -- the feature itself is off.
+    - 409 ``worker_unavailable``: the feature is enabled but there is no
+      running pipeline worker to produce frames (camera disabled, or the
+      worker has stopped/failed).
+    - 503 ``preview_not_ready``: the worker is running but has not yet
+      encoded a first frame (e.g. immediately after startup).
+    """
+
+    config = request.app.state.config
+    if not config.ui.webcam_preview_enabled:
+        raise _domain_error(
+            status.HTTP_404_NOT_FOUND, "preview_disabled", "the webcam preview is disabled"
+        )
+    worker = getattr(request.app.state, "worker", None)
+    if worker is None or worker.health().state not in (WorkerState.RUNNING, WorkerState.PAUSED):
+        raise _domain_error(
+            status.HTTP_409_CONFLICT,
+            "worker_unavailable",
+            "no running pipeline worker is available to produce a preview",
+        )
+    jpeg = worker.latest_preview_jpeg()
+    if jpeg is None:
+        raise _domain_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "preview_not_ready",
+            "no preview frame has been generated yet",
+        )
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": _PREVIEW_CACHE_CONTROL},
     )
 
 

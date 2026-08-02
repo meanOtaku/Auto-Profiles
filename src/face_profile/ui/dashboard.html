@@ -12,6 +12,7 @@
   button { cursor: pointer; }
   #token { width: 24rem; }
   .muted { color: #666; font-size: 0.85rem; }
+  #preview-img { max-width: 100%; border: 1px solid #ccc; display: none; }
 </style>
 </head>
 <body>
@@ -28,6 +29,19 @@
   <input id="token" type="password" placeholder="paste API auth_token if configured">
   <button onclick="refreshAll()">Connect / Refresh</button>
   <span id="health-status" class="muted"></span>
+</section>
+
+<section>
+  <h2>Webcam preview</h2>
+  <p class="muted">
+    A server-drawn, bounded-rate snapshot (boxes and labels only, never a raw
+    stream) polled from <code>/api/v1/preview/latest.jpg</code>. Only appears
+    when the deployment's configuration enables it; this page draws nothing
+    itself. Polling starts after Connect/Refresh and pauses while this tab is
+    hidden.
+  </p>
+  <img id="preview-img" alt="Webcam preview">
+  <p id="preview-status" class="muted"></p>
 </section>
 
 <section>
@@ -74,6 +88,86 @@ async function apiPost(path, body) {
   return response.json();
 }
 
+// Webcam preview polling. Deliberately conservative: ~1.7 req/s stays well
+// under the API's fixed-window rate limiter (120/min) even as the sole
+// recurring client-side timer on this page, while still tracking the
+// server's own ~5 FPS generation cadence closely enough to read as "near
+// live". `previewInFlight` prevents overlapping requests if one fetch is
+// slow; the object URL from the previous frame is always revoked before (or
+// instead of) creating the next one, so this never accumulates blob memory.
+const PREVIEW_POLL_MS = 600;
+let previewTimer = null;
+let previewInFlight = false;
+let previewObjectUrl = null;
+
+function stopPreview() {
+  if (previewTimer !== null) {
+    clearInterval(previewTimer);
+    previewTimer = null;
+  }
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+  document.getElementById('preview-img').style.display = 'none';
+}
+
+async function pollPreviewOnce() {
+  if (previewInFlight) return;
+  previewInFlight = true;
+  const statusEl = document.getElementById('preview-status');
+  try {
+    const response = await fetch('/api/v1/preview/latest.jpg', {
+      headers: authHeaders(),
+      cache: 'no-store',
+    });
+    if (response.status === 404) {
+      statusEl.textContent = 'preview disabled for this deployment';
+      stopPreview();
+      return;
+    }
+    if (response.status === 409) {
+      statusEl.textContent = 'preview unavailable: pipeline worker is not running';
+      return;
+    }
+    if (response.status === 503) {
+      statusEl.textContent = 'preview not ready yet';
+      return;
+    }
+    if (!response.ok) {
+      statusEl.textContent = 'preview error: ' + response.status;
+      return;
+    }
+    const blob = await response.blob();
+    const nextUrl = URL.createObjectURL(blob);
+    const img = document.getElementById('preview-img');
+    img.src = nextUrl;
+    img.style.display = 'block';
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = nextUrl;
+    statusEl.textContent = '';
+  } catch (error) {
+    statusEl.textContent = 'preview error: ' + error;
+  } finally {
+    previewInFlight = false;
+  }
+}
+
+function startPreview() {
+  if (previewTimer !== null || document.hidden) return;
+  pollPreviewOnce();
+  previewTimer = setInterval(pollPreviewOnce, PREVIEW_POLL_MS);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopPreview();
+  } else {
+    startPreview();
+  }
+});
+window.addEventListener('beforeunload', stopPreview);
+
 async function approveCandidate(id) {
   const reviewedBy = prompt('Reviewer name for approval:');
   if (!reviewedBy) return;
@@ -93,8 +187,10 @@ async function refreshAll() {
   try {
     await apiGet('/api/v1/health');
     statusEl.textContent = 'connected';
+    startPreview();
   } catch (error) {
     statusEl.textContent = 'unreachable: ' + error;
+    stopPreview();
     return;
   }
 

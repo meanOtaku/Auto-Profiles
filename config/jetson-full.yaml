@@ -5,8 +5,9 @@
 # safety-gated automatic candidate enrollment, active-user selection,
 # last-used preference learning (load-and-apply on activation plus
 # debounced save-back), the loopback-only REST/WebSocket API, the optional
-# dashboard UI, and the real Linux settings backend (ALSA amixer volume,
-# sysfs backlight brightness).
+# dashboard UI with its bounded-rate annotated webcam preview snapshot, and
+# the real Linux settings backend (ALSA amixer volume, sysfs backlight
+# brightness).
 #
 # This file is the described "full path"; it is not a small or casual
 # opt-in. Read docs/RUNNING_ON_JETSON.md section 9 before using it -- it
@@ -192,6 +193,18 @@ api:
 
 ui:
   enabled: true
+  # The one tracked config where the annotated webcam preview is on: a
+  # bounded-rate (~5 FPS), max-640px-wide, server-drawn JPEG snapshot with
+  # boxes and privacy-safe labels (known -> display name + profile UUID;
+  # unrecognized -> deterministic candidate name + candidate UUID once one
+  # exists, else "Unknown"; liveness failures shown in a distinct color).
+  # It is never a raw camera stream, never persisted beyond the single
+  # latest in-memory frame, and never logged. See docs/THREAT_MODEL.md and
+  # docs/reports/M13.md for the privacy/network-load trade-off this adds.
+  webcam_preview_enabled: true
+  webcam_preview_jpeg_quality: 70
+  webcam_preview_max_fps: 5.0
+  webcam_preview_max_width: 640
 
 liveness:
   # Required safety gate for automatic promotion, but the passive heuristic

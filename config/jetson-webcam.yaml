@@ -161,6 +161,13 @@ api:
 ui:
   # M13 optional dashboard stays disabled by default.
   enabled: false
+  # Webcam preview snapshot stays off independently of `enabled` above --
+  # see UIConfig's docstring and docs/reports/M13.md. Only
+  # config/jetson-full.yaml turns this on.
+  webcam_preview_enabled: false
+  webcam_preview_jpeg_quality: 70
+  webcam_preview_max_fps: 5.0
+  webcam_preview_max_width: 640
 
 liveness:
   # M14 liveness stays disabled by default; see docs/reports/M14.md.

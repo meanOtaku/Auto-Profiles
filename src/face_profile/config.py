@@ -302,9 +302,22 @@ class APIConfig(StrictModel):
 
 
 class UIConfig(StrictModel):
-    """M13 optional dashboard: a static page served by the M12 API, disabled by default."""
+    """M13 optional dashboard: a static page served by the M12 API, disabled by default.
+
+    ``webcam_preview_enabled`` gates a separate, additional capability: a
+    bounded-rate, server-annotated JPEG snapshot of the pipeline worker's
+    current frame (boxes and privacy-safe labels only, never a raw stream).
+    It defaults to False independently of ``enabled`` -- the dashboard can
+    be on with the preview still off -- per ARCHITECTURE.md §13 ("do not
+    expose raw camera streams by default"). Only config/jetson-full.yaml
+    turns this on; every other tracked config keeps it False.
+    """
 
     enabled: bool = False
+    webcam_preview_enabled: bool = False
+    webcam_preview_jpeg_quality: int = Field(default=70, ge=1, le=100)
+    webcam_preview_max_fps: float = Field(default=5.0, gt=0.0, le=30.0)
+    webcam_preview_max_width: int = Field(default=640, ge=64, le=4096)
 
 
 class LivenessConfig(StrictModel):

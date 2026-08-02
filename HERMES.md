@@ -590,6 +590,22 @@ Acceptance:
 - Every operation uses the service API.
 - Closing the UI does not stop the system.
 
+The optional debug preview named in ROADMAP.md's M13 deliverables is a
+disabled-by-default, authenticated, bounded-rate (~5 FPS), max-width-
+downscaled, server-annotated JPEG snapshot (`GET /api/v1/preview/latest.jpg`)
+of the pipeline worker's current frame: boxes plus a privacy-safe label per
+tracked face (known → display name and profile UUID; unrecognized → the
+deterministic temporary candidate name and candidate UUID once one exists,
+otherwise "Unknown"; a distinct color marks a liveness failure). All drawing
+and every recognition/enrollment decision stay server-side in
+`api/worker.py`; the dashboard only polls and displays the returned image, so
+this remains a plain API client per this document's UI rule. It is on only in
+`config/jetson-full.yaml`; every other tracked config keeps
+`ui.webcam_preview_enabled: false`. Enabling it increases this deployment's
+privacy exposure (an authenticated client can now see a near-live view of
+whoever the camera observes) and its network/polling load; see
+docs/THREAT_MODEL.md's M13 section for the full accounting.
+
 ### M14 — Advanced Liveness and Spoof Resistance
 
 Build on the minimum enrollment checks from M8 with measured passive anti-spoofing, optional active challenges, and optional depth or IR support.

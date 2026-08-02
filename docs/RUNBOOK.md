@@ -174,3 +174,4 @@ Run `uv lock --check`. If dependency changes are intentional, regenerate `uv.loc
 - Use only synthetic, consented, or otherwise authorized media. Never commit real face fixtures.
 - Treat future biometric exports and backups as sensitive encrypted material.
 - Review `docs/THREAT_MODEL.md` before introducing a new external boundary.
+- The M13 dashboard's annotated webcam preview (`ui.webcam_preview_enabled`) stays off by default; it is only on in `config/jetson-full.yaml`. It never writes a frame to disk or a log, keeps at most one encoded JPEG in memory, and is served only from the same authenticated `GET /api/v1/preview/latest.jpg` route documented in `ARCHITECTURE.md` §4.8. Enabling it on a private config increases network/privacy exposure accordingly -- do not enable it on a config exposed beyond loopback without re-reading `docs/THREAT_MODEL.md`'s M13 section first.

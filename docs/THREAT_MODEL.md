@@ -10,6 +10,9 @@ This document covers the M2 camera and multi-face-detection boundaries and recor
 - User preference data and device-setting history.
 - Configuration, authentication material, audit events, and model artifacts.
 - Camera availability and correct active-user decisions.
+- The M13 dashboard's single latest annotated webcam-preview JPEG (ephemeral,
+  in-memory only; distinct from the face crops/embeddings above, which are
+  never included in it).
 
 ## Trust Boundaries
 
@@ -40,6 +43,8 @@ This document covers the M2 camera and multi-face-detection boundaries and recor
 | Unauthorized API or WebSocket access | Profile/data compromise | Loopback default; authentication, authorization, audit, rate limits | M12 |
 | Unsafe host-setting writes | Availability or usability loss | Mock-first adapters, validation, bounded values, platform-specific tests | M9/M9B |
 | Queue or worker exhaustion | Denial of service | Bounded queues, timeouts, cancellation, overload metrics | M1 onward |
+| Webcam preview frame disclosure | Anyone with a bearer token (or any client, when the deployment runs without one on loopback) can view whoever is currently in front of the camera | Disabled by default in every tracked config except `config/jetson-full.yaml`; same bearer-auth dependency as every other route, no URL/query token; `Cache-Control: no-store`; bounded JPEG quality/FPS/max-width; single-slot in-memory snapshot, never written to disk or logs | M13 |
+| Hostile display/candidate name drawn into the preview | Oversized or control-character name inflates the annotated frame or corrupts the overlay | Preview label text is length-bounded and printable-only before any `cv2.putText` call | M13 |
 
 ## M2 Security Invariants
 
@@ -60,6 +65,28 @@ This document covers the M2 camera and multi-face-detection boundaries and recor
 - Detection output is profile-independent and contains no identity, tracking, enrollment, persistence, or settings behavior.
 - Logs expose only the face count; pixels, boxes, landmarks, configured paths, and backend details remain excluded.
 - Debug overlays are copies, never automatic, and use the private frame-output boundary.
+
+## M13 Webcam Preview Invariants
+
+- `ui.webcam_preview_enabled` defaults to False and is only True in the tracked
+  `config/jetson-full.yaml`; every other tracked config keeps it False.
+- `GET /api/v1/preview/latest.jpg` depends on the same `require_auth` bearer
+  dependency as every other route and accepts no URL or query token.
+- The response always carries `Cache-Control: no-store, no-cache,
+  must-revalidate`.
+- The worker holds at most one encoded JPEG at a time, always replaced, never
+  appended to; drawing always happens on a copy of the pipeline's frame, so
+  the source frame used for detection/recognition is never mutated.
+- Display names and candidate temporary/UUID text are stripped to printable
+  characters and length-bounded before any drawing call.
+- No preview frame, pixel data, or JPEG bytes are ever written to disk or to
+  a log record; only aggregate worker health (frame counts, state) is logged,
+  exactly as before this feature.
+- Increases this deployment's privacy exposure and network load relative to a
+  preview-disabled deployment: an authenticated dashboard client can now see
+  a near-live (bounded-rate) view of whoever the camera currently observes,
+  and each connected client polls the daemon repeatedly instead of only on
+  demand.
 
 ## Review Triggers
 

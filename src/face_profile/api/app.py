@@ -170,4 +170,8 @@ def _build_worker(
         profiles=database.profiles if database is not None else None,
         poll_interval_seconds=config.api.worker_poll_interval_seconds,
         detection_interval_frames=config.api.detection_interval_frames,
+        preview_enabled=config.ui.webcam_preview_enabled,
+        preview_jpeg_quality=config.ui.webcam_preview_jpeg_quality,
+        preview_max_fps=config.ui.webcam_preview_max_fps,
+        preview_max_width=config.ui.webcam_preview_max_width,
     )
