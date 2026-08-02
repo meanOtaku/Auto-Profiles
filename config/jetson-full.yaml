@@ -2,8 +2,7 @@
 # a Jetson with a USB webcam: capture, integrity-pinned YuNet detection,
 # in-memory tracking, quality/alignment, integrity-pinned SFace ONNX
 # embeddings, an encrypted profile database, known-person recognition,
-# manual-review candidate enrollment (automatic promotion stays rejected by
-# config validation regardless of any value here), active-user selection,
+# safety-gated automatic candidate enrollment, active-user selection,
 # last-used preference learning (load-and-apply on activation plus
 # debounced save-back), the loopback-only REST/WebSocket API, the optional
 # dashboard UI, and the real Linux settings backend (ALSA amixer volume,
@@ -24,19 +23,14 @@
 #     gitignored config instead, per docs/RUNNING_ON_UBUNTU.md section 7).
 #   - It does not embed any credential, token, or secret (there are none in
 #     this file at all).
-#   - It does not enable automatic candidate promotion -- enrollment always
-#     requires explicit owner review through the API/UI candidate-review
-#     surface (EnrollmentConfig.validate_automatic_promotion rejects
-#     automatic_promotion: true unconditionally regardless of this file).
-#   - It does not enable liveness. The passive liveness checks
-#     (liveness/passive.py) are classical spectral/reflectance heuristics
-#     with genuinely unevaluated accuracy (docs/reports/M14.md) -- turning
-#     them on here could silently block legitimate enrollment/recognition
-#     attempts with no accuracy evidence to justify the tradeoff. This is
-#     an honest, deliberate gap, not an oversight: owner review of
-#     liveness's real accuracy on this hardware remains mandatory before
-#     enabling it, and enabling it is a one-line, well-isolated change
-#     (liveness.enabled: true) once that review happens.
+#   - Automatic enrollment is an explicit high-risk operator choice. The
+#     acknowledgement below asserts that the operator has authority/consent
+#     to enroll people seen by this camera. Every candidate must still pass
+#     multi-sample quality, consistency, duplicate, and liveness gates.
+#   - Passive liveness is enabled because automatic promotion fails closed
+#     without it. These classical spectral/reflectance heuristics have
+#     genuinely unevaluated accuracy (docs/reports/M14.md): they can reject
+#     legitimate users and are not proof of production-grade anti-spoofing.
 #
 # Before running this config, you MUST:
 #   1. Run scripts/provision-models.sh to download and integrity-verify
@@ -136,12 +130,13 @@ recognition:
   embedding_cache_refresh_seconds: 2.0
 
 enrollment:
-  # automatic_promotion MUST stay false: config validation unconditionally
-  # rejects true regardless of this file (liveness/consent/API-security
-  # production gates are not all satisfied yet). Every candidate requires
-  # explicit owner approval through the API/UI candidate-review surface.
+  # High-risk explicit opt-in. This acknowledgement asserts operator
+  # authority/consent; it is not consent collected from people on camera.
+  # AppConfig also requires the camera-to-liveness pipeline, encrypted
+  # database, recognition, enrollment, and a secure API configuration.
   enabled: true
-  automatic_promotion: false
+  automatic_promotion: true
+  automatic_promotion_consent_acknowledged: true
   minimum_samples: 5
   minimum_observation_seconds: 3.0
   minimum_quality: 0.65
@@ -199,8 +194,9 @@ ui:
   enabled: true
 
 liveness:
-  # Deliberately disabled -- see the header comment above for why.
-  enabled: false
+  # Required safety gate for automatic promotion, but the passive heuristic
+  # remains unevaluated and is not production-grade anti-spoofing.
+  enabled: true
   minimum_passive_score: 0.5
   high_frequency_energy_min: 0.02
   high_frequency_energy_max: 0.35

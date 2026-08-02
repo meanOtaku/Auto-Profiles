@@ -99,10 +99,11 @@ recognition:
   embedding_cache_refresh_seconds: 2.0
 
 enrollment:
-  # M8 candidate enrollment stays disabled. automatic_promotion is
-  # unconditionally rejected by config validation regardless (ADR 0013).
+  # M8 candidate enrollment and automatic promotion stay disabled in this
+  # detection-only config; the full opt-in lives in jetson-full.yaml.
   enabled: false
   automatic_promotion: false
+  automatic_promotion_consent_acknowledged: false
   minimum_samples: 5
   minimum_observation_seconds: 3.0
   minimum_quality: 0.65

@@ -19,8 +19,16 @@ def create_candidate_manager(
     if not config.enrollment.enabled:
         return None
     candidates = _candidate_repository(config, database)
+    automatic_promoter = (
+        _candidate_promoter(config, database, candidates)
+        if config.enrollment.automatic_promotion
+        else None
+    )
     return CandidateManager(
-        candidates=candidates, profiles=database.profiles, config=config.enrollment
+        candidates=candidates,
+        profiles=database.profiles,
+        config=config.enrollment,
+        automatic_promoter=automatic_promoter,
     )
 
 
@@ -33,6 +41,14 @@ def create_candidate_promoter(
     if not config.enrollment.enabled:
         return None
     candidates = _candidate_repository(config, database)
+    return _candidate_promoter(config, database, candidates)
+
+
+def _candidate_promoter(
+    config: AppConfig,
+    database: ProfileDatabase,
+    candidates: CandidateRepository,
+) -> CandidatePromoter:
     return CandidatePromoter(
         connection=database.connection,
         candidates=candidates,

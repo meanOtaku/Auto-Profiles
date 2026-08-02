@@ -219,18 +219,14 @@ class RecognitionConfig(StrictModel):
 class EnrollmentConfig(StrictModel):
     """M8 candidate enrollment thresholds and safety gates.
 
-    ``automatic_promotion`` is rejected unconditionally: HERMES.md requires
-    liveness, consent, retention, and API-security gates to be explicitly
-    enabled and tested before automatic promotion may run, and none of
-    those production gates exist yet (liveness is M14; API security is
-    M12). This is intentional fail-closed configuration validation, not an
-    oversight — see TESTING.md's required "automatic-promotion
-    configuration is rejected when required production gates are missing"
-    scenario.
+    Automatic promotion remains disabled by default and requires an explicit
+    operator acknowledgement. Cross-feature prerequisites are enforced by
+    :class:`AppConfig`, where every relevant section is visible.
     """
 
     enabled: bool = False
     automatic_promotion: bool = False
+    automatic_promotion_consent_acknowledged: bool = False
     minimum_samples: int = Field(default=5, ge=1, le=100)
     minimum_observation_seconds: float = Field(default=3.0, gt=0.0, le=600.0)
     minimum_quality: float = Field(default=0.65, ge=0.0, le=1.0)
@@ -244,16 +240,6 @@ class EnrollmentConfig(StrictModel):
     near_frontal_max_roll_degrees: float = Field(default=12.0, ge=0.0, le=90.0)
     near_frontal_max_yaw_asymmetry: float = Field(default=0.15, ge=0.0, le=1.0)
     candidate_retention_days: int = Field(default=7, ge=1, le=3650)
-
-    @model_validator(mode="after")
-    def validate_automatic_promotion(self) -> Self:
-        if self.automatic_promotion:
-            raise ValueError(
-                "automatic_promotion requires liveness, consent, retention, and "
-                "API-security production gates that are not yet implemented; "
-                "keep this false until those milestones land"
-            )
-        return self
 
 
 class ActiveUserConfig(StrictModel):
@@ -384,6 +370,37 @@ class AppConfig(StrictModel):
     liveness: LivenessConfig = LivenessConfig()
     logging: LoggingConfig = LoggingConfig()
     settings: SettingsConfig = SettingsConfig()
+
+    @model_validator(mode="after")
+    def validate_automatic_promotion_gates(self) -> Self:
+        """Fail closed unless automatic biometric enrollment is fully explicit."""
+
+        if not self.enrollment.automatic_promotion:
+            return self
+        if not self.enrollment.automatic_promotion_consent_acknowledged:
+            raise ValueError(
+                "automatic_promotion requires "
+                "automatic_promotion_consent_acknowledged: true"
+            )
+        required = {
+            "camera": self.camera.enabled,
+            "detection": self.detection.enabled,
+            "tracking": self.tracking.enabled,
+            "quality": self.quality.enabled,
+            "embedding": self.embedding.enabled,
+            "database": self.database.enabled,
+            "recognition": self.recognition.enabled,
+            "enrollment": self.enrollment.enabled,
+            "api": self.api.enabled,
+            "liveness": self.liveness.enabled,
+        }
+        missing = sorted(name for name, enabled in required.items() if not enabled)
+        if missing:
+            raise ValueError(
+                "automatic_promotion requires enabled safety/runtime features: "
+                + ", ".join(missing)
+            )
+        return self
 
 
 def load_config(path: Path) -> AppConfig:

@@ -272,13 +272,18 @@ and `docs/reports/M7.md` before relying on `similarity_threshold`/`similarity_ma
 ```yaml
 enrollment:
   enabled: true
-  automatic_promotion: false   # this must stay false; see below
+  automatic_promotion: false
+  automatic_promotion_consent_acknowledged: false
 ```
 
-`automatic_promotion: true` is **unconditionally rejected** by config validation —
-HERMES.md requires production liveness, consent, retention, and API-security gates
-before automatic promotion, and enabling it fails config load regardless of other
-settings. Use `candidate approve`/`reject` for owner-reviewed promotion instead.
+Manual approval remains the safe default. Setting `automatic_promotion: true`
+is accepted only when `automatic_promotion_consent_acknowledged: true`, liveness,
+the full camera/quality/embedding/recognition/enrollment pipeline, encrypted
+database storage, finite retention, and the API are enabled. A non-loopback API
+still requires authentication. The acknowledgement asserts operator authority;
+it does not collect consent from people seen by the camera. Passive liveness is
+unevaluated and is not production-grade anti-spoofing. See the explicit high-risk
+example in `config/jetson-full.yaml`.
 
 ### API / headless daemon
 

@@ -1,9 +1,8 @@
 """Atomic, auditable, idempotent candidate-to-profile promotion (M8).
 
-Promotion requires explicit owner approval by default per HERMES.md; the
-automatic-promotion configuration gate is rejected unconditionally by
-``EnrollmentConfig`` until M14's liveness/consent/security prerequisites
-exist. This module performs the safety-critical transaction: re-checking
+Promotion requires explicit owner approval by default. An explicitly
+safety-gated automatic mode calls this exact same transaction rather than
+bypassing it. This module performs the safety-critical transaction: re-checking
 for duplicate profiles at promotion time, transferring embeddings,
 creating the profile, and recording an audit event, all in one commit.
 """
@@ -127,6 +126,12 @@ class CandidatePromoter:
                 profile_id=profile.id,
                 candidate_id=candidate_id,
                 correlation_id=correlation_id,
+                metadata={
+                    "promotion_method": (
+                        "automatic" if reviewed_by == "system:auto-promotion" else "manual"
+                    ),
+                    "reviewed_by": reviewed_by,
+                },
             )
         except Exception:
             self._connection.rollback()

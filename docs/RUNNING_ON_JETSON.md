@@ -283,7 +283,7 @@ Jetson hardware, please record what you found in a new or existing
 ## 9. Full recognize + restore-settings path (`config/jetson-full.yaml`)
 
 This section covers the full opt-in path: USB webcam, face detection and
-tracking, quality/alignment, face recognition, manual-review candidate
+tracking, quality/alignment, face recognition, safety-gated automatic candidate
 enrollment, active-user selection, and last-used preference restore/learning,
 using the tracked, credential-free `config/jetson-full.yaml`
 (see that file's own header comment and `docs/reports/M16.md` for exactly what
@@ -362,20 +362,26 @@ Then open <http://127.0.0.1:8443/> in a browser on your laptop. The dashboard is
 an API client only (HERMES.md's "UI Mode — Secondary" rule) — everything it shows
 comes from the same loopback API you could also reach with `curl`.
 
-### Step 5 — Enroll and approve a profile
+### Step 5 — Let a qualified candidate promote automatically
 
 Look at a working camera for a few seconds so the pipeline collects enough
 consistent, quality-accepted samples (`enrollment.minimum_samples: 5`,
-`enrollment.minimum_observation_seconds: 3.0` in the tracked config) to create an
-unknown candidate, then approve it through the UI's candidate-review page (or the
-CLI: `uv run face-profile --config config/jetson-full.yaml candidate list`, then
-`candidate approve --id <id> --reviewed-by <you>`). Automatic promotion is
-unconditionally rejected by config validation — every profile requires this
-explicit approval step, with no exception.
+`enrollment.minimum_observation_seconds: 3.0` in the tracked config). The face
+must also pass the enabled passive-liveness gate and both candidate/profile
+duplicate checks. Once qualified, the candidate is promoted transactionally to
+an active profile named with the existing deterministic `Unknown-N` convention;
+no manual UI action is needed. The audit event records
+`promotion_method: automatic` and the candidate records
+`reviewed_by: system:auto-promotion`.
+
+This is a high-risk biometric opt-in: the tracked config's acknowledgement is an
+operator assertion, not consent collected from a person on camera, and passive
+liveness has unevaluated accuracy. Manual approve/reject remains available in
+configs where `automatic_promotion: false`.
 
 ### Step 6 — Change volume and/or brightness while recognized
 
-While the newly-approved profile is still the recognized active user, change the
+While the newly-created profile is still the recognized active user, change the
 system volume and/or screen brightness through the Jetson's normal OS controls
 (not through this project's API). Give it a few seconds to register.
 

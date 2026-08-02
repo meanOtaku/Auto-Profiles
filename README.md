@@ -61,8 +61,8 @@ A headless-first, local identity and device-personalization service built increm
 - Temporary candidate lifecycle (`COLLECTING → {EXPIRED, REJECTED, READY_FOR_REVIEW} → PROMOTED`) with the same field-level encryption as permanent profiles.
 - Qualification gates: minimum samples/duration/quality, a near-frontal sample requirement, internal-consistency (mixed-identity) and temporal-variability (minimum spoof/replay) checks, and duplicate detection against both active profiles and other candidates.
 - A one-frame observation can never reach `READY_FOR_REVIEW`; rejected or expired candidates have their biometric samples deleted immediately.
-- Atomic, auditable, idempotent owner-reviewed promotion (`CandidatePromoter`), including a promotion-time duplicate re-check that defends against a matching profile appearing after a candidate qualified.
-- `automatic_promotion` is unconditionally rejected by configuration validation until M12/M14 deliver the required production security and liveness gates.
+- Atomic, auditable, idempotent promotion (`CandidatePromoter`), including a promotion-time duplicate re-check that defends against a matching profile appearing after a candidate qualified.
+- Manual approval remains the default. Automatic promotion is available only behind explicit consent acknowledgement and fail-closed liveness, retention, encrypted-database, recognition-pipeline, and API-security gates; the tracked opt-in is `config/jetson-full.yaml`.
 - `face-profile candidate list|show|approve|reject` CLI.
 - A prerequisite defect in M6's repositories (auto-commit per call, incompatible with atomic multi-write promotion) was found and fixed during this milestone.
 - M8 automated verification is intentionally deferred at the owner's request; this implementation is not yet a claimed completed milestone.

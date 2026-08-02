@@ -29,7 +29,7 @@ This document covers the M2 camera and multi-face-detection boundaries and recor
 | Accidental frame retention | Sensitive image disclosure | No default persistence; explicit destination required; image payload excluded from representations and logs | M1 onward |
 | Sensitive values in logs | Biometric or credential disclosure | JSON field allowlist, identifier-only context, adversarial logging tests | M0 onward |
 | Malformed or hostile configuration | Unsafe startup | Strict schema, unknown-key rejection, controlled failure | M0 |
-| Spoofed or replayed face input | Unauthorized enrollment or activation | Candidate quarantine, manual approval, replay checks, advanced liveness | M8/M14 |
+| Spoofed or replayed face input | Unauthorized enrollment or activation | Candidate quarantine, manual approval by default; automatic mode additionally requires explicit operator acknowledgement, all qualification gates, and enabled liveness (currently unevaluated, not production-grade) | M8/M14 |
 | Unlicensed or tampered model | Legal or supply-chain exposure | Provenance, license, checksum, compatibility matrix | M5 |
 | Malformed detector output | Invalid geometry, crashes, or unsafe downstream decisions | Shape, dtype, finite-value, confidence, and frame-intersection validation; controlled errors | M2 onward |
 | Detection metadata disclosure | Face-location privacy loss | Count-only logs; no boxes or landmarks in structured diagnostics | M2 onward |

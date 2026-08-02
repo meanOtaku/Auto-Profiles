@@ -1,15 +1,15 @@
 """Per-track candidate lifecycle orchestration for unrecognized detections.
 
 ``CandidateManager`` decides when an M7 ``UNKNOWN`` recognition observation
-should create or extend a temporary candidate, evaluates HERMES.md's
-unknown-person policy after each sample, and marks candidates ready for
-owner review. It never promotes a candidate itself (``enrollment/
-promotion.py`` owns that, gated on explicit approval) and never creates a
-permanent profile.
+should create or extend a temporary candidate and evaluates HERMES.md's
+unknown-person policy after each sample. Qualified candidates either wait
+for owner review or, under explicitly safety-gated automatic mode, are
+handed to ``CandidatePromoter`` for the same atomic promotion path.
 """
 
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import datetime
 from uuid import UUID
 
@@ -18,6 +18,11 @@ from face_profile.database.candidate_repository import CandidateRepository
 from face_profile.database.models import Candidate, CandidateStatus, ProfileStatus
 from face_profile.database.repository import ProfileRepository
 from face_profile.enrollment.frontality import is_near_frontal
+from face_profile.enrollment.promotion import (
+    CandidatePromoter,
+    DuplicateProfileError,
+    LivenessRequiredError,
+)
 from face_profile.enrollment.qualification import (
     QualificationResult,
     QualificationThresholds,
@@ -41,11 +46,13 @@ class CandidateManager:
         candidates: CandidateRepository,
         profiles: ProfileRepository,
         config: EnrollmentConfig,
+        automatic_promoter: CandidatePromoter | None = None,
         max_tracked: int = 1000,
     ) -> None:
         self._candidates = candidates
         self._profiles = profiles
         self._config = config
+        self._automatic_promoter = automatic_promoter
         self._max_tracked = max_tracked
         self._track_candidates: dict[int, UUID] = {}
         self._track_frontal_seen: dict[int, bool] = {}
@@ -101,6 +108,19 @@ class CandidateManager:
         if result.ready:
             self._candidates.mark_ready_for_review(candidate.id)
             self._candidates.set_metadata_flag(candidate.id, "liveness_passed", True)
+            if self._config.automatic_promotion:
+                if self._automatic_promoter is None:
+                    raise CandidateManagerError(
+                        "automatic promotion is enabled without a configured promoter"
+                    )
+                # CandidatePromoter persists these expected safety rejections;
+                # no permanent profile is created.
+                with suppress(DuplicateProfileError, LivenessRequiredError):
+                    self._automatic_promoter.promote(
+                        candidate.id,
+                        reviewed_by="system:auto-promotion",
+                        correlation_id=f"auto-promotion:{candidate.id}",
+                    )
         return self._candidates.get(candidate.id)
 
     def _resolve_or_start_candidate(self, track_id: int, observed_at: datetime) -> Candidate:

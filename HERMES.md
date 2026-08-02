@@ -106,7 +106,7 @@ Emit events and persist state
 12. All state changes must be observable through logs and events.
 13. Permanent biometric data must be encrypted at rest before persistent profiles are enabled.
 14. Candidate promotion requires explicit owner approval by default.
-15. Automatic promotion must remain disabled unless liveness, consent, and security requirements are explicitly enabled and tested.
+15. Automatic promotion must remain disabled unless liveness, consent acknowledgement, retention, biometric encryption, and API security requirements are explicitly enabled by fail-closed configuration.
 16. Administrative APIs must be authenticated whenever the service is reachable beyond loopback.
 17. Every model artifact must have recorded provenance, version, license, and checksum.
 
@@ -126,7 +126,7 @@ A candidate may become permanent only after all configured criteria pass, includ
 - Liveness approval when liveness is enabled
 - Owner approval, unless explicitly configured automatic promotion is permitted
 
-Manual owner approval is the default. Automatic promotion is an opt-in production feature and must not be enabled until liveness checks, retention policy, API security, and biometric-data protection are active. Candidates must expire without creating permanent biometric profiles when approval is not granted.
+Manual owner approval is the default. Automatic promotion is an explicit high-risk opt-in and is accepted only when liveness, finite retention, API security, encrypted biometric storage, the full recognition pipeline, and `automatic_promotion_consent_acknowledged: true` are all active. The acknowledgement is an operator assertion, not consent collected from a person on camera. Passive liveness remains unevaluated and must not be described as production-grade anti-spoofing. Candidates must expire without creating permanent biometric profiles when neither manual nor automatic promotion succeeds.
 
 Suggested starting defaults:
 
@@ -134,6 +134,7 @@ Suggested starting defaults:
 enrollment:
   enabled: true
   automatic_promotion: false
+  automatic_promotion_consent_acknowledged: false
   minimum_samples: 5
   minimum_observation_seconds: 3
   minimum_quality: 0.65

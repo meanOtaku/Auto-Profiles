@@ -88,13 +88,13 @@ recognition:
   embedding_cache_refresh_seconds: 2.0
 
 enrollment:
-  # M8 candidate enrollment is disabled by default. automatic_promotion
-  # must stay false: HERMES.md requires liveness, consent, retention, and
-  # API-security production gates before automatic promotion may run, and
-  # none of those exist yet (liveness is M14; API security is M12). See
-  # docs/reports/M8.md and ADR 0013.
+  # M8 candidate enrollment and automatic promotion are disabled by default.
+  # Automatic promotion additionally requires explicit consent acknowledgement,
+  # liveness, the complete recognition/database pipeline, and a secure API.
+  # See docs/reports/M8.md and ADR 0013.
   enabled: false
   automatic_promotion: false
+  automatic_promotion_consent_acknowledged: false
   minimum_samples: 5
   minimum_observation_seconds: 3.0
   minimum_quality: 0.65
