@@ -137,10 +137,17 @@ preference_learning:
   self_application_tolerance_seconds: 2.0
 
 api:
-  # M12 headless daemon/API is disabled by default. Binding beyond
-  # loopback without an explicit auth_token is rejected at config-load
-  # time, not merely at request time; see docs/reports/M12.md and ADR 0017.
-  enabled: false
+  # The loopback-only REST/WebSocket API is enabled so `bootstrap.py run`
+  # (or `face-profile serve`) has something useful to start out of the
+  # box. `auth_token: null` stays legal only because bind_host never
+  # leaves loopback (APIConfig.validate_fail_closed, ADR 0017) -- binding
+  # beyond loopback without an explicit auth_token is rejected at
+  # config-load time, not merely at request time. Do not change
+  # bind_host in this tracked file; use a private, gitignored config for
+  # non-loopback exposure and set a real auth_token plus transport
+  # protection. Camera, detection, database, recognition, and enrollment
+  # all remain disabled/mock below regardless of this section.
+  enabled: true
   bind_host: 127.0.0.1
   bind_port: 8443
   auth_token: null
@@ -156,9 +163,10 @@ api:
   detection_interval_frames: 1
 
 ui:
-  # M13 optional dashboard is disabled by default; it is a pure API
-  # client with no domain logic of its own. See docs/reports/M13.md.
-  enabled: false
+  # M13's static dashboard is enabled: it is a pure API client with no
+  # domain logic of its own (see docs/reports/M13.md and ADR 0018) and
+  # is safe to serve alongside the loopback-only API above.
+  enabled: true
   # Webcam preview snapshot stays off independently of `enabled` above --
   # see UIConfig's docstring and docs/reports/M13.md. Only
   # config/jetson-full.yaml turns this on.

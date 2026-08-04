@@ -2,14 +2,13 @@
 #
 # Manually triggered once this workflow exists on the default branch, or triggered
 # on alpha by changing only .github/windows-compatibility-trigger. This is a static-verification
-# and packaging gate for the native Windows operator surface (run.ps1,
-# run-continuous.ps1, scripts/provision-models.ps1, the Windows settings
-# adapter), not part of the required push/PR gate in ci.yml. It never runs
-# pytest or any test runner, and its only executed application command is the
-# hardware-disabled, non-mutating `check` against config/windows-safe.yaml --
-# it never opens a camera, loads a model, touches the profile database, binds
-# a network port, or calls into pycaw/WMI. See docs/reports/M17.md for what
-# this workflow does and does not prove.
+# and packaging gate for the native Windows operator surface (bootstrap.py,
+# the Windows settings adapter), not part of the required push/PR gate in
+# ci.yml. It never runs pytest or any test runner, and its only executed
+# application command is the hardware-disabled, non-mutating `check` against
+# config/default.yaml -- it never opens a camera, loads a model, touches the
+# profile database, binds a network port, or calls into pycaw/WMI. See
+# docs/reports/M17.md for what this workflow does and does not prove.
 
 name: windows-compatibility
 
@@ -89,4 +88,4 @@ jobs:
       - name: Run hardware-disabled, non-mutating CLI check
         shell: pwsh
         run: |
-          .venv-wheel-check\Scripts\face-profile.exe --config config\windows-safe.yaml check
+          .venv-wheel-check\Scripts\face-profile.exe --config config\default.yaml check
