@@ -36,7 +36,7 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
       - name: Type check
-        run: uv run mypy src tests
+        run: uv run mypy src tests bootstrap.py
       - name: Test
         run: uv run pytest
       - name: Audit dependencies
@@ -48,6 +48,8 @@ jobs:
           --fail-on=UNKNOWN --format=plain
       - name: Build distributions
         run: uv build
+      - name: Bootstrap doctor (read-only)
+        run: uv run python bootstrap.py doctor --config config/default.yaml
 
   secrets:
     runs-on: ubuntu-24.04

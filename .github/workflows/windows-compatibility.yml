@@ -5,10 +5,11 @@
 # and packaging gate for the native Windows operator surface (bootstrap.py,
 # the Windows settings adapter), not part of the required push/PR gate in
 # ci.yml. It never runs pytest or any test runner, and its only executed
-# application command is the hardware-disabled, non-mutating `check` against
-# config/default.yaml -- it never opens a camera, loads a model, touches the
-# profile database, binds a network port, or calls into pycaw/WMI. See
-# docs/reports/M17.md for what this workflow does and does not prove.
+# application commands are the hardware-disabled, non-mutating `check`
+# against config/default.yaml and bootstrap.py's read-only `doctor` -- it
+# never opens a camera, loads a model, touches the profile database, binds a
+# network port, or calls into pycaw/WMI. See docs/reports/M17.md for what
+# this workflow does and does not prove.
 
 name: windows-compatibility
 
@@ -48,7 +49,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Compile source
-        run: uv run python -m compileall src
+        run: uv run python -m compileall src bootstrap.py
 
       - name: Lint
         run: uv run ruff check .
@@ -56,6 +57,7 @@ jobs:
       - name: Format check
         run: >-
           uv run ruff format --check
+          bootstrap.py
           src/face_profile/_win_security.py
           src/face_profile/platform_security.py
           src/face_profile/camera/__init__.py
@@ -69,7 +71,7 @@ jobs:
           src/face_profile/settings/windows.py
 
       - name: Type check (strict)
-        run: uv run mypy src
+        run: uv run mypy src bootstrap.py
 
       - name: Build distributions
         run: uv build
@@ -89,3 +91,6 @@ jobs:
         shell: pwsh
         run: |
           .venv-wheel-check\Scripts\face-profile.exe --config config\default.yaml check
+
+      - name: Bootstrap doctor (read-only)
+        run: uv run python bootstrap.py doctor --config config\default.yaml
