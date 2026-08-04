@@ -651,6 +651,23 @@ The AI agent must:
 19. Never enable non-loopback administrative APIs without authentication and authorization.
 20. Keep automatic candidate promotion disabled until its liveness, consent, retention, and security gates are verified.
 
+## M17 Windows Compatibility Contract
+
+M17 extends the existing factories rather than replacing Linux behavior:
+
+- native Windows 10/11 x64 source execution uses PowerShell, DirectShow,
+  pycaw/Core Audio, WMI internal-panel brightness, and protected NTFS DACLs;
+- real settings backends fail closed on the wrong OS;
+- Windows full-profile settings require both capabilities before mutation and
+  report rollback failure explicitly;
+- `run.ps1` defaults to the non-mutating `preflight` command using
+  `config/windows-full.yaml`; `config/windows-safe.yaml` is the fully
+  hardware-free import/config/CLI target;
+- `run-continuous.ps1` is a foreground restart loop, not a Windows Service;
+- M17 tests were explicitly not created or run by owner direction. Evidence is
+  limited to static/build checks until the manual Windows workflow and hardware
+  checks in `docs/reports/M17.md` are recorded.
+
 ## Standard Milestone Prompt
 
 ```text

@@ -42,6 +42,8 @@ This document covers the M2 camera and multi-face-detection boundaries and recor
 | Identity instability | Wrong settings applied | Conservative thresholds, hysteresis, UNKNOWN state, atomic switching | M7/M10 |
 | Unauthorized API or WebSocket access | Profile/data compromise | Loopback default; authentication, authorization, audit, rate limits | M12 |
 | Unsafe host-setting writes | Availability or usability loss | Mock-first adapters, validation, bounded values, platform-specific tests | M9/M9B |
+| POSIX permission assumptions on Windows | Key, database, sidecar, or debug-frame disclosure | Protected NTFS DACLs restricted to the current process-token user and LocalSystem; protected inheritance for sensitive directories; reparse-point rejection; fail-closed verification | M17 |
+| Partial Windows profile application | Volume or brightness changed without the matching profile value | Probe both capabilities and prior values before mutation; reject the whole profile when either capability is unavailable; rollback and report if a later write fails | M17 |
 | Queue or worker exhaustion | Denial of service | Bounded queues, timeouts, cancellation, overload metrics | M1 onward |
 | Webcam preview frame disclosure | Anyone with a bearer token (or any client, when the deployment runs without one on loopback) can view whoever is currently in front of the camera | Disabled by default in every tracked config except `config/jetson-full.yaml`; same bearer-auth dependency as every other route, no URL/query token; `Cache-Control: no-store`; bounded JPEG quality/FPS/max-width; single-slot in-memory snapshot, never written to disk or logs | M13 |
 | Hostile display/candidate name drawn into the preview | Oversized or control-character name inflates the annotated frame or corrupts the overlay | Preview label text is length-bounded and printable-only before any `cv2.putText` call | M13 |
@@ -87,6 +89,21 @@ This document covers the M2 camera and multi-face-detection boundaries and recor
   a near-live (bounded-rate) view of whoever the camera currently observes,
   and each connected client polls the daemon repeatedly instead of only on
   demand.
+
+## M17 Windows Platform Invariants
+
+- `settings.backend: windows` is rejected off Windows, and `linux` is rejected
+  off Linux; the mock backend remains the portable safe default.
+- Windows full-profile settings require both Core Audio volume and WMI
+  brightness. An external-monitor-only system commonly lacks the latter and
+  fails before either value is mutated.
+- Windows key, database, sidecar, and debug-frame protection relies on protected
+  NTFS DACL behavior that must still be verified on a native NTFS host.
+- `config/windows-safe.yaml` never opens a camera, loads a model, creates the
+  profile database, binds a listener, or calls pycaw/WMI.
+- Tracked Windows configs remain loopback-only and contain no credentials.
+- PowerShell launchers are foreground processes and make no Windows Service or
+  reboot-survival claim.
 
 ## Review Triggers
 

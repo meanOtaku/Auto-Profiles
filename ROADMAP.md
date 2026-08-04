@@ -283,6 +283,16 @@ Exit criteria:
 
 ## Post-M15 Backlog
 
+### Implemented cross-cutting additions after the original roadmap
+
+- **M16:** active-profile settings restore, corrected/pinned SFace deployment
+  contract, and the full Jetson path (`docs/reports/M16.md`).
+- **M17:** native Windows x64 source path: DirectShow capture, Windows settings
+  and DACL adapters, PowerShell launch/model-provisioning scripts, Windows
+  configs, and a manual test-free packaging/import/safe-CLI workflow. Local
+  static/build evidence exists; native Windows and hardware evidence remains
+  deferred (`docs/reports/M17.md`, ADR 0021).
+
 Potential future work:
 
 - Multi-camera fusion
@@ -356,3 +366,5 @@ Includes M14–M15 plus security, privacy, packaging, and deployment review.
 | M13 | Optional UI | Implementation drafted; verification deferred | [M13 report](docs/reports/M13.md): a static, dependency-free dashboard that is purely an /api/v1 client (no domain logic) was added on 2026-08-01, disabled by default. A bounded-rate, server-annotated webcam preview snapshot endpoint and dashboard polling were added on 2026-08-02, disabled by default and enabled only in config/jetson-full.yaml. Automated tests and full quality gates were explicitly deferred by the owner and have not been claimed; no real hardware/browser verification was performed. |
 | M14 | Advanced liveness | Implementation drafted; verification deferred | [M14 report](docs/reports/M14.md): passive spectral/reflectance heuristics, an active-challenge yaw-sequence verifier, and a depth/IR interface stub were added on 2026-08-01, with two-point enforcement (sticky per-track gating plus promotion-time defense-in-depth) that "failed liveness cannot create a permanent profile" — verified against a real database including a simulated bypass attempt. No standard printed-photo test set or trained anti-spoof model exists in this environment; no accuracy rate is claimed. Automated tests and full quality gates were explicitly deferred by the owner. |
 | M15 | Performance and scale | Implementation drafted; verification deferred | [M15 report](docs/reports/M15.md): a TTL-refreshed active-profile embedding cache, adaptive detection frequency with motion-prediction tracking between detections, per-profile embedding storage limits, and a JSON metrics endpoint were added on 2026-08-01. FAISS was deliberately not added (unjustified at current data scale, see ADR 0020). No real FPS/latency benchmark exists in this environment; no number is claimed. Automated tests and full quality gates were explicitly deferred by the owner. |
+| M16 | Deployment gap closure | Implementation drafted; evidence scoped in report | [M16 report](docs/reports/M16.md): active-profile settings restore, SFace preprocessing correction, pinned models, and the full Jetson deployment path. |
+| M17 | Native Windows compatibility | Implementation and local static/build verification complete; Windows runtime deferred | [M17 report](docs/reports/M17.md): native PowerShell launch/provision paths, DirectShow selection, pycaw/WMI settings, protected-DACL storage, Windows configs, and a manual Windows packaging/import/safe-CLI workflow. No tests were created or run for M17; the Windows workflow and hardware checks remain pending. |

@@ -1,0 +1,205 @@
+# Hardware-free, non-mutating Windows config (M17). Identical in effect to
+# config/default.yaml -- every capability below is disabled or mock-backed --
+# tracked as its own file so `.\run.ps1 -Config config\windows-safe.yaml` and
+# the windows-compatibility CI workflow have an unambiguous, Windows-labeled
+# safe target that exercises install/import/config-load/CLI `check` paths on
+# a Windows host without ever opening a camera, loading a model, touching the
+# profile database, binding a network port, or calling into pycaw/WMI.
+#
+# Use this file first on a new Windows machine (or in CI) to confirm the
+# toolchain and package import graph work before ever pointing at
+# config/windows-full.yaml. See docs/RUNNING_ON_WINDOWS.md.
+
+camera:
+  # Hardware access remains off until an explicit frame source is configured.
+  enabled: false
+  source: mock
+  path: null
+  device_index: 0
+  retry_attempts: 2
+
+detection:
+  # M2 remains mock-backed unless an integrity-pinned YuNet model is explicitly configured.
+  enabled: false
+  backend: mock
+  model_path: null
+  model_sha256: null
+  confidence_threshold: 0.5
+  nms_threshold: 0.3
+  top_k: 5000
+
+tracking:
+  # M3 tracking is in-memory, geometric, and disabled until explicitly enabled.
+  enabled: false
+  max_missing_frames: 5
+  min_iou: 0.1
+  max_center_distance: 2.0
+  max_samples_per_track: 20
+  max_tracks: 100
+
+quality:
+  # M4 quality filtering and alignment are disabled until explicitly enabled.
+  # Thresholds are conservative heuristic starting points; they must be
+  # evaluated on local data before production use, per CODING_STANDARDS.md.
+  enabled: false
+  min_face_width: 40.0
+  min_face_height: 40.0
+  min_sharpness_variance: 60.0
+  min_mean_brightness: 40.0
+  max_mean_brightness: 215.0
+  max_overexposed_fraction: 0.15
+  max_roll_degrees: 25.0
+  max_yaw_asymmetry: 0.35
+  max_landmark_margin_violation: 0.05
+  aligned_output_width: 112
+  aligned_output_height: 112
+  best_sample_max_tracks: 100
+
+embedding:
+  # M5 embedding generation is disabled and mock-backed until an
+  # integrity-pinned, provenance-reviewed ONNX model is explicitly
+  # configured. similarity_threshold/margin are unevaluated starting points;
+  # see docs/reports/M5.md and ADR 0010 before relying on them.
+  enabled: false
+  backend: mock
+  model_path: null
+  model_sha256: null
+  model_name: mock-content-hash
+  model_version: "1"
+  dimension: 128
+  input_width: 112
+  input_height: 112
+  similarity_threshold: 0.5
+  similarity_margin: 0.05
+
+database:
+  # M6 persistent, encrypted profile storage is disabled by default. The key
+  # file must live outside version control and outside the database
+  # directory's backup scope in production; see docs/adr/0011-persistent-
+  # profile-database.md and docs/reports/M6.md before enabling.
+  enabled: false
+  path: data/face_profile.sqlite3
+  key_path: data/face_profile.key
+  retention_days: 30
+  # M15 storage limit: bounds unconstrained per-profile embedding growth.
+  # Matches enrollment.maximum_samples_per_candidate's default so a normal
+  # promotion is never silently truncated.
+  maximum_embeddings_per_profile: 50
+
+recognition:
+  # M7 known-person recognition is disabled by default. It additionally
+  # requires embedding.enabled, since it consumes the M5 similarity
+  # threshold/margin. Temporal-confirmation values are unevaluated starting
+  # points; see docs/reports/M7.md before relying on them.
+  enabled: false
+  min_consistent_observations: 3
+  confirmation_window_seconds: 5.0
+  max_tracks: 100
+  # M15: amortizes the active-profile embedding decrypt cost across this
+  # interval instead of paying it on every recognize() call.
+  embedding_cache_refresh_seconds: 2.0
+
+enrollment:
+  # M8 candidate enrollment and automatic promotion are disabled by default.
+  # Automatic promotion additionally requires explicit consent acknowledgement,
+  # liveness, the complete recognition/database pipeline, and a secure API.
+  # See docs/reports/M8.md and ADR 0013.
+  enabled: false
+  automatic_promotion: false
+  automatic_promotion_consent_acknowledged: false
+  minimum_samples: 5
+  minimum_observation_seconds: 3.0
+  minimum_quality: 0.65
+  candidate_expiry_seconds: 30.0
+  maximum_samples_per_candidate: 50
+  default_name_prefix: Unknown
+  minimum_internal_consistency: 0.5
+  maximum_internal_similarity: 0.9999
+  duplicate_profile_threshold: 0.5
+  duplicate_candidate_threshold: 0.5
+  near_frontal_max_roll_degrees: 12.0
+  near_frontal_max_yaw_asymmetry: 0.15
+  candidate_retention_days: 7
+
+active_user:
+  # M10 active-user selection is disabled by default. Weights/margins are
+  # unevaluated starting points from ARCHITECTURE.md §10's suggested score;
+  # see docs/reports/M10.md before relying on them.
+  enabled: false
+  face_size_weight: 0.3
+  centre_weight: 0.2
+  duration_weight: 0.2
+  confidence_weight: 0.2
+  priority_weight: 0.1
+  duration_saturation_seconds: 5.0
+  priority_normalization_scale: 100.0
+  switch_margin: 0.1
+  stability_duration_seconds: 2.0
+  switch_cooldown_seconds: 5.0
+  min_visible_duration_seconds: 0.5
+  leaving_grace_seconds: 1.0
+
+preference_learning:
+  # M11 last-used-preference learning is disabled by default. It requires
+  # active_user.enabled (attribution) and a real, non-mock settings adapter
+  # to observe anything meaningful; see docs/reports/M11.md and ADR 0016.
+  enabled: false
+  debounce_seconds: 3.0
+  min_active_duration_seconds: 2.0
+  self_application_tolerance_seconds: 2.0
+
+api:
+  # M12 headless daemon/API is disabled by default. Binding beyond
+  # loopback without an explicit auth_token is rejected at config-load
+  # time, not merely at request time; see docs/reports/M12.md and ADR 0017.
+  enabled: false
+  bind_host: 127.0.0.1
+  bind_port: 8443
+  auth_token: null
+  rate_limit_per_minute: 120
+  max_request_body_bytes: 1000000
+  events_page_size: 50
+  worker_poll_interval_seconds: 0.1
+  # M15 adaptive detection frequency: 1 = detect every frame (default,
+  # unchanged behavior). A value > 1 skips the detector on the other
+  # frames and only advances tracks by motion prediction; raise
+  # tracking.max_missing_frames accordingly or tracks may expire between
+  # detections. See docs/reports/M15.md and ADR 0020.
+  detection_interval_frames: 1
+
+ui:
+  # M13 optional dashboard is disabled by default; it is a pure API
+  # client with no domain logic of its own. See docs/reports/M13.md.
+  enabled: false
+  # Webcam preview snapshot stays off independently of `enabled` above --
+  # see UIConfig's docstring and docs/reports/M13.md.
+  webcam_preview_enabled: false
+  webcam_preview_jpeg_quality: 70
+  webcam_preview_max_fps: 5.0
+  webcam_preview_max_width: 640
+
+liveness:
+  # M14 liveness is disabled by default. The passive checks are classical
+  # spectral/reflectance heuristics, not a trained anti-spoof model, and
+  # have no evaluated real-world accuracy; see docs/reports/M14.md and
+  # ADR 0019 before enabling and relying on them.
+  enabled: false
+  minimum_passive_score: 0.5
+  high_frequency_energy_min: 0.02
+  high_frequency_energy_max: 0.35
+  minimum_specular_variance: 5.0
+  require_active_challenge: false
+  active_challenge_min_yaw_delta: 0.2
+
+logging:
+  level: INFO
+
+settings:
+  # M17: stays on the in-memory mock adapter, NOT "windows" -- this file's
+  # entire purpose is to be hardware-free and non-mutating, so it must never
+  # call into pycaw/Core Audio or the WMI/PowerShell brightness bridge.
+  # config/windows-full.yaml is where settings.backend: windows is opted in.
+  backend: mock
+  volume: 50
+  brightness: 50
+  min_apply_interval_seconds: 0.2

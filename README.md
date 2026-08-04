@@ -1,6 +1,15 @@
 # Face Profile Recognition System
 
-A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. **All milestones M0–M15 have an implementation drafted on `alpha`, with verification (automated tests, real-hardware benchmarking, and real-dataset accuracy evaluation) explicitly deferred by the owner** — see each milestone's report under `docs/reports/` for exactly what was and was not verified. Every capability (biometric persistence, recognition, enrollment, liveness, the real settings adapter, active-user selection, preference learning, the API/daemon, and the optional UI) remains an explicit, disabled-by-default opt-in.
+A headless-first, local identity and device-personalization service built incrementally with privacy-preserving defaults. **Milestones M0–M17 have implementations drafted on `alpha`; verification remains scoped to the evidence recorded in each report under `docs/reports/`.** M17 adds a native Windows source path, but only Linux-hosted static/build evidence exists until the manual Windows workflow and real hardware checks in `docs/reports/M17.md` are completed. Every sensitive capability remains config-gated; `config/windows-safe.yaml` is the fully hardware-disabled Windows validation target.
+
+## M17 Native Windows Compatibility Addition
+
+- Native PowerShell launchers and integrity-pinned model provisioning: `run.ps1`, `run-continuous.ps1`, and `scripts/provision-models.ps1`.
+- Windows webcam capture through OpenCV DirectShow, with runtime camera validation honestly deferred where Windows exposes no stable device path.
+- `WindowsSettingsAdapter`: pycaw/Core Audio volume plus WMI internal-panel brightness, with fail-before-mutation capability checks and rollback on partial failure.
+- Protected NTFS DACL handling for keys, SQLite data/sidecars, and debug frames; existing POSIX/Linux behavior remains behind the same platform boundary.
+- `config/windows-safe.yaml`, `config/windows-full.yaml`, and a manual Windows packaging/import/safe-CLI workflow that never runs pytest.
+- Installation, limitations, and startup commands: `docs/RUNNING_ON_WINDOWS.md`; architecture decision: ADR 0021; evidence and deferred hardware checks: `docs/reports/M17.md`.
 
 ## M15 Performance and Scale Addition
 

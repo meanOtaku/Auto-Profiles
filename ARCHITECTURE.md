@@ -462,6 +462,23 @@ Supported deployment targets may include:
 
 The initial production target should be selected before implementing OS-specific settings adapters.
 
+M17 adds a native Windows 10/11 x64 **source-execution** target. Windows
+capture is selected deterministically through OpenCV DirectShow; host settings
+remain behind `SettingsAdapter` and use pycaw/Core Audio plus WMI internal-panel
+brightness. Selecting a real settings backend on the wrong OS fails in the
+factory before construction. The Linux ALSA/sysfs adapter remains unchanged and
+available on Linux.
+
+Sensitive local files use one cross-platform boundary: POSIX mode enforcement
+on Linux and protected NTFS DACLs on Windows. The Windows directory DACL carries
+inheritable child ACEs so SQLite sidecars inherit the same current-token-user +
+LocalSystem restriction. Real NTFS behavior is not considered verified until the
+evidence in `docs/reports/M17.md` is updated from a native Windows run.
+
+`run.ps1` and `run-continuous.ps1` are foreground launchers, not a Windows
+Service implementation. The latter provides bounded restart backoff but no
+auto-start, logoff survival, or reboot-survival guarantee.
+
 Development may run without authentication only when explicitly configured for loopback-only binding. Deployments exposed beyond loopback require transport protection, authentication, authorization, rate limiting, and secure secret management.
 
 ## 15. Architecture Decision Records
@@ -477,3 +494,4 @@ Major decisions should be recorded under `docs/adr/` using short ADR files, incl
 - API authentication, authorization, and audit policy
 - Model provenance and licensing
 - Worker execution and queue overload policy
+- Windows platform security, settings, and native launch path (ADR 0021)

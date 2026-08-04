@@ -18,6 +18,13 @@ existing test suite, ``database/keys.py``, etc.), so nothing at module
 import time may require a Windows-only package. All ``pywin32`` access is
 isolated in :mod:`face_profile._win_security` and imported lazily, only
 from inside the ``platform.system() == "Windows"`` branches below.
+
+Windows directory creation remains a documented first-creation limitation:
+``Path.mkdir`` creates with inherited ACLs and the protected DACL is applied in
+a second call. A concurrent local process could race that narrow interval and
+create a child with the earlier inherited ACL. Native ``CreateDirectoryW`` with
+an explicit ``SECURITY_ATTRIBUTES`` descriptor is the follow-up required to
+remove that TOCTOU window; M17 does not claim that guarantee.
 """
 
 from __future__ import annotations

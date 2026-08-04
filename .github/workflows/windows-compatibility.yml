@@ -1,0 +1,87 @@
+# M17 Windows compatibility gate.
+#
+# Manually triggered only (workflow_dispatch) -- this is a static-verification
+# and packaging gate for the native Windows operator surface (run.ps1,
+# run-continuous.ps1, scripts/provision-models.ps1, the Windows settings
+# adapter), not part of the required push/PR gate in ci.yml. It never runs
+# pytest or any test runner, and its only executed application command is the
+# hardware-disabled, non-mutating `check` against config/windows-safe.yaml --
+# it never opens a camera, loads a model, touches the profile database, binds
+# a network port, or calls into pycaw/WMI. See docs/reports/M17.md for what
+# this workflow does and does not prove.
+
+name: windows-compatibility
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11.15", "3.12.13"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          version: "0.11.32"
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile source
+        run: uv run python -m compileall src
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: >-
+          uv run ruff format --check
+          src/face_profile/_win_security.py
+          src/face_profile/platform_security.py
+          src/face_profile/camera/__init__.py
+          src/face_profile/camera/diagnostics.py
+          src/face_profile/config.py
+          src/face_profile/database/connection.py
+          src/face_profile/database/keys.py
+          src/face_profile/diagnostics/preflight.py
+          src/face_profile/settings/factory.py
+          src/face_profile/settings/linux.py
+          src/face_profile/settings/windows.py
+
+      - name: Type check (strict)
+        run: uv run mypy src
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Install built wheel into a clean environment
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem -Path dist -Filter *.whl | Select-Object -First 1
+          if (-not $wheel) {
+            Write-Error "no wheel found in dist/"
+            exit 1
+          }
+          uv venv .venv-wheel-check
+          uv pip install --python .venv-wheel-check\Scripts\python.exe $wheel.FullName
+
+      - name: Run hardware-disabled, non-mutating CLI check
+        shell: pwsh
+        run: |
+          .venv-wheel-check\Scripts\face-profile.exe --config config\windows-safe.yaml check

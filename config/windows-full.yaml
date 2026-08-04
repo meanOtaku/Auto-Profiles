@@ -1,0 +1,241 @@
+# Practical, real native-Windows-10/11-x64 opt-in path (M17): USB/built-in
+# webcam via OpenCV's DirectShow backend, integrity-pinned YuNet detection,
+# in-memory tracking, quality/alignment, integrity-pinned SFace ONNX
+# embeddings, an encrypted profile database, known-person recognition,
+# active-user selection, last-used preference learning (load-and-apply on
+# activation plus debounced save-back), the loopback-only REST/WebSocket
+# API, and the real Windows settings backend (pycaw Core Audio volume, WMI
+# CIM internal-panel brightness). This is `.\run.ps1`'s default config.
+#
+# `camera.device_index: 0` selects the platform-appropriate OpenCV backend
+# automatically at runtime -- on Windows this is `cv2.CAP_DSHOW`
+# (DirectShow), pinned in `WebcamFrameSource._default_capture_factory`
+# rather than left to OpenCV's auto-detection; see
+# docs/RUNNING_ON_WINDOWS.md for index selection, driver, and
+# Camera-privacy-settings troubleshooting. Unlike Linux's stable
+# `/dev/videoN` nodes, Windows device indices can renumber across reboots
+# or when USB hubs are docked/undocked -- re-check the index if the wrong
+# camera opens.
+#
+# Deliberately different from config/jetson-full.yaml in one respect:
+# `enrollment.automatic_promotion` stays `false` here. Jetson-full's
+# automatic mode was an explicit, separately-reasoned owner request with
+# its own consent-acknowledgement text (see that file's header and
+# docs/reports/M16.md); no equivalent instruction exists for the Windows
+# surface, so this file requires manual `face-profile candidate approve`
+# review for every candidate rather than assuming that owner-authority
+# consent extends here. Flip `automatic_promotion` (plus
+# `automatic_promotion_consent_acknowledged` and `liveness.enabled`) in
+# your own private config if you deliberately want that on Windows too --
+# do not edit this tracked file to do it.
+#
+# What this file deliberately does NOT do:
+#   - It does not expose the API beyond loopback (bind_host stays
+#     127.0.0.1, auth_token stays null -- APIConfig's fail-closed validator
+#     requires a real auth_token the moment bind_host leaves loopback; use
+#     your own private, gitignored config for LAN/WAN exposure, per
+#     docs/RUNNING_ON_UBUNTU.md section 7, which applies unchanged here).
+#   - It does not embed any credential, token, or secret.
+#   - It does not enable the webcam-preview dashboard snapshot
+#     (`ui.webcam_preview_enabled`) -- that stays off in every tracked
+#     config except config/jetson-full.yaml, per docs/THREAT_MODEL.md's M13
+#     section; the dashboard itself (`ui.enabled`) is on and works as a
+#     plain API client without it.
+#
+# Before running this config, you MUST:
+#   1. Run scripts\provision-models.ps1 to download and integrity-verify
+#      both pinned models into models\ (fails closed on any hash
+#      mismatch; never loads an unverified model).
+#   2. Run `.\run.ps1 -Config config\windows-full.yaml preflight` to
+#      non-mutating-ly validate config and both model files' hashes first.
+#      Unlike Linux, the camera check cannot stat a stable device path on
+#      Windows and is explicitly reported as deferred to runtime capture
+#      (see diagnostics/preflight.py's module docstring and
+#      docs/RUNNING_ON_WINDOWS.md).
+#
+# See docs/MODELS.md for exact model provenance/SHA-256 and
+# docs/RUNNING_ON_WINDOWS.md for the full runbook, camera/driver/index
+# troubleshooting, pycaw/Core Audio, WMI brightness, DACL, and firewall
+# notes.
+#
+# **Static verification only.** No Windows machine was available while
+# writing this file -- see docs/reports/M17.md for exactly what was and was
+# not verified.
+
+camera:
+  enabled: true
+  source: webcam
+  path: null
+  device_index: 0
+  retry_attempts: 2
+
+detection:
+  # Integrity-pinned YuNet: verified against docs/MODELS.md's recorded
+  # SHA-256 before OpenCV ever loads the file.
+  enabled: true
+  backend: yunet
+  model_path: models/face_detection_yunet_2023mar.onnx
+  model_sha256: 8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
+  confidence_threshold: 0.5
+  nms_threshold: 0.3
+  top_k: 5000
+
+tracking:
+  enabled: true
+  max_missing_frames: 5
+  min_iou: 0.1
+  max_center_distance: 2.0
+  max_samples_per_track: 20
+  max_tracks: 100
+
+quality:
+  # aligned_output_width/height (112x112) must match the embedding model's
+  # required input size below -- both are SFace's documented 112x112
+  # aligned-crop contract (docs/MODELS.md).
+  enabled: true
+  min_face_width: 40.0
+  min_face_height: 40.0
+  min_sharpness_variance: 60.0
+  min_mean_brightness: 40.0
+  max_mean_brightness: 215.0
+  max_overexposed_fraction: 0.15
+  max_roll_degrees: 25.0
+  max_yaw_asymmetry: 0.35
+  max_landmark_margin_violation: 0.05
+  aligned_output_width: 112
+  aligned_output_height: 112
+  best_sample_max_tracks: 100
+
+embedding:
+  # Integrity-pinned SFace (OpenCV Zoo, Apache-2.0): verified against
+  # docs/MODELS.md's recorded SHA-256 before OpenCV ever loads the file.
+  # input_mean: 0.0 / input_scale: 1.0 are SFace's actual, independently
+  # confirmed preprocessing contract (see docs/MODELS.md).
+  # similarity_threshold: 0.363 is OpenCV Zoo's own published SFace
+  # cosine-similarity threshold, not a locally evaluated value -- no local
+  # same-person/different-person dataset evaluation has been performed
+  # (M5 exit criteria remain open; see docs/reports/M5.md).
+  enabled: true
+  backend: onnx
+  model_path: models/face_recognition_sface_2021dec.onnx
+  model_sha256: 0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79
+  model_name: sface
+  model_version: 2021dec
+  dimension: 128
+  input_width: 112
+  input_height: 112
+  input_mean: 0.0
+  input_scale: 1.0
+  similarity_threshold: 0.363
+  similarity_margin: 0.05
+
+database:
+  enabled: true
+  path: data/face_profile.sqlite3
+  key_path: data/face_profile.key
+  retention_days: 30
+  maximum_embeddings_per_profile: 50
+
+recognition:
+  enabled: true
+  min_consistent_observations: 3
+  confirmation_window_seconds: 5.0
+  max_tracks: 100
+  embedding_cache_refresh_seconds: 2.0
+
+enrollment:
+  # Manual review remains the default here -- see this file's header for
+  # why `automatic_promotion` is not flipped on, unlike
+  # config/jetson-full.yaml.
+  enabled: true
+  automatic_promotion: false
+  automatic_promotion_consent_acknowledged: false
+  minimum_samples: 5
+  minimum_observation_seconds: 3.0
+  minimum_quality: 0.65
+  candidate_expiry_seconds: 30.0
+  maximum_samples_per_candidate: 50
+  default_name_prefix: Unknown
+  minimum_internal_consistency: 0.5
+  maximum_internal_similarity: 0.9999
+  duplicate_profile_threshold: 0.5
+  duplicate_candidate_threshold: 0.5
+  near_frontal_max_roll_degrees: 12.0
+  near_frontal_max_yaw_asymmetry: 0.15
+  candidate_retention_days: 7
+
+active_user:
+  enabled: true
+  face_size_weight: 0.3
+  centre_weight: 0.2
+  duration_weight: 0.2
+  confidence_weight: 0.2
+  priority_weight: 0.1
+  duration_saturation_seconds: 5.0
+  priority_normalization_scale: 100.0
+  switch_margin: 0.1
+  stability_duration_seconds: 2.0
+  switch_cooldown_seconds: 5.0
+  min_visible_duration_seconds: 0.5
+  leaving_grace_seconds: 1.0
+
+preference_learning:
+  # Debounced save-back of stable real user changes. Loading and applying
+  # the active profile's already-saved settings on activation is not a
+  # separate opt-in -- it runs automatically whenever database + camera +
+  # active_user are all enabled, as this file has them (see
+  # settings/active_profile_applier.py).
+  enabled: true
+  debounce_seconds: 3.0
+  min_active_duration_seconds: 2.0
+  self_application_tolerance_seconds: 2.0
+
+api:
+  # Loopback-only, no auth_token: safe because bind_host never leaves
+  # 127.0.0.1 in this tracked file (APIConfig.validate_fail_closed).
+  enabled: true
+  bind_host: 127.0.0.1
+  bind_port: 8443
+  auth_token: null
+  rate_limit_per_minute: 120
+  max_request_body_bytes: 1000000
+  events_page_size: 50
+  worker_poll_interval_seconds: 0.1
+  detection_interval_frames: 1
+
+ui:
+  # Plain API client, no domain logic (docs/reports/M13.md). Webcam preview
+  # stays off -- see this file's header.
+  enabled: true
+  webcam_preview_enabled: false
+  webcam_preview_jpeg_quality: 70
+  webcam_preview_max_fps: 5.0
+  webcam_preview_max_width: 640
+
+liveness:
+  # Not a mandatory gate here since automatic_promotion is false; stays
+  # disabled by default, matching config/jetson-webcam.yaml's pattern for a
+  # detect/recognize path without automatic biometric enrollment.
+  enabled: false
+  minimum_passive_score: 0.5
+  high_frequency_energy_min: 0.02
+  high_frequency_energy_max: 0.35
+  minimum_specular_variance: 5.0
+  require_active_challenge: false
+  active_challenge_min_yaw_delta: 0.2
+
+logging:
+  level: INFO
+
+settings:
+  # The real Windows adapter (M17): pycaw/Core Audio for volume, a
+  # WMI/PowerShell CIM bridge for brightness. Brightness commonly reports
+  # UNSUPPORTED on a desktop with only external monitors (WmiMonitorBrightness
+  # generally only exists for an internal laptop panel). In that case Windows
+  # preflight fails and full-profile apply refuses before mutating either value;
+  # this is an explicit platform limitation, not a silent partial success. See
+  # settings/windows.py and docs/RUNNING_ON_WINDOWS.md.
+  backend: windows
+  volume: 50
+  brightness: 50
+  min_apply_interval_seconds: 0.2

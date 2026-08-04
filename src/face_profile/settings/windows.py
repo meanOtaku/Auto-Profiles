@@ -37,6 +37,8 @@ documented pycaw/WMI/PowerShell behavior, not exercised at runtime. See
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -60,6 +62,9 @@ _READ_BRIGHTNESS_SCRIPT = (
 )
 
 _ACCESS_DENIED_MARKERS = ("access is denied", "0x80070005", "accessdenied", "permissiondenied")
+_E_ACCESSDENIED = 0x80070005
+_ERROR_ACCESS_DENIED = 5
+_RPC_E_CHANGED_MODE = 0x80010106
 
 _BRIGHTNESS_VALUE_PATTERN = re.compile(r"^\s*(\d{1,3})\s*$")
 
@@ -84,6 +89,24 @@ def _classify_failure(stderr: str) -> CapabilityStatus:
     if any(marker in lowered for marker in _ACCESS_DENIED_MARKERS):
         return CapabilityStatus.PERMISSION_DENIED
     return CapabilityStatus.UNSUPPORTED
+
+
+def _exception_has_code(error: BaseException, *codes: int) -> bool:
+    """Match a Win32/HRESULT code without relying on localized text."""
+
+    expected = {code & 0xFFFFFFFF for code in codes}
+    for attribute in ("hresult", "winerror", "errno"):
+        value = getattr(error, attribute, None)
+        if isinstance(value, int) and value & 0xFFFFFFFF in expected:
+            return True
+    return False
+
+
+def _is_access_denied(error: BaseException) -> bool:
+    if _exception_has_code(error, _E_ACCESSDENIED, _ERROR_ACCESS_DENIED):
+        return True
+    lowered = str(error).lower()
+    return any(marker in lowered for marker in _ACCESS_DENIED_MARKERS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,16 +137,31 @@ class PycawEndpointVolumeAccessor:
     overhead for that safety.
     """
 
-    def _endpoint_volume(self) -> object:
+    @contextmanager
+    def _endpoint_volume(self) -> Iterator[object]:
         # Imported lazily: pycaw/comtypes are Windows-only optional
         # dependencies (pyproject.toml's sys_platform == 'win32' marker),
         # never installed on Linux/macOS, so this module must stay
         # importable there -- only actually calling into this accessor
         # requires them to be present.
+        import comtypes  # type: ignore[import-not-found]
         from pycaw.pycaw import AudioUtilities  # type: ignore[import-not-found]
 
-        speakers = AudioUtilities.GetSpeakers()
-        return speakers.EndpointVolume
+        initialized_here = False
+        try:
+            try:
+                comtypes.CoInitialize()
+                initialized_here = True
+            except Exception as error:
+                # An existing MTA is valid for Core Audio too. RPC_E_CHANGED_MODE
+                # means another component owns that apartment; never uninitialize it.
+                if not _exception_has_code(error, _RPC_E_CHANGED_MODE):
+                    raise
+            speakers = AudioUtilities.GetSpeakers()
+            yield speakers.EndpointVolume
+        finally:
+            if initialized_here:
+                comtypes.CoUninitialize()
 
     def read_volume_percent(self) -> int | None:
         # comtypes/pycaw raise their own COM-specific exception types (not
@@ -133,8 +171,8 @@ class PycawEndpointVolumeAccessor:
         # like LinuxSettingsAdapter._read_volume_percent()'s non-zero-exit
         # case, rather than crashing the caller.
         try:
-            endpoint = self._endpoint_volume()
-            scalar = endpoint.GetMasterVolumeLevelScalar()  # type: ignore[attr-defined]
+            with self._endpoint_volume() as endpoint:
+                scalar = endpoint.GetMasterVolumeLevelScalar()  # type: ignore[attr-defined]
         except Exception:
             return None
         value = round(scalar * 100)
@@ -142,23 +180,24 @@ class PycawEndpointVolumeAccessor:
 
     def write_volume_percent(self, value: int) -> bool:
         try:
-            endpoint = self._endpoint_volume()
-            endpoint.SetMasterVolumeLevelScalar(value / 100.0, None)  # type: ignore[attr-defined]
+            with self._endpoint_volume() as endpoint:
+                endpoint.SetMasterVolumeLevelScalar(  # type: ignore[attr-defined]
+                    value / 100.0, None
+                )
         except Exception:
             return False
         return True
 
     def capability(self) -> CapabilityStatus:
         try:
-            self._endpoint_volume()
+            with self._endpoint_volume() as endpoint:
+                endpoint.GetMasterVolumeLevelScalar()  # type: ignore[attr-defined]
         except ImportError:
             return CapabilityStatus.UNSUPPORTED
         except Exception as error:
-            # Privacy/detail-safe: only a coarse substring check, never the
-            # raw COM exception (which can carry host-specific text) is
-            # logged or returned to a caller.
-            message = str(error).lower()
-            if "access" in message and "denied" in message:
+            # Privacy/detail-safe: classify the structured Windows code first
+            # and never expose raw COM exception text to callers or logs.
+            if _is_access_denied(error):
                 return CapabilityStatus.PERMISSION_DENIED
             return CapabilityStatus.UNSUPPORTED
         return CapabilityStatus.AVAILABLE
