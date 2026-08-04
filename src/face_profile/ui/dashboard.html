@@ -2,17 +2,97 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Face Profile Dashboard (M13)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Profile Dashboard</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
-  h1 { font-size: 1.3rem; }
-  section { margin-bottom: 2rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; }
-  button { cursor: pointer; }
-  #token { width: 24rem; }
-  .muted { color: #666; font-size: 0.85rem; }
-  #preview-img { max-width: 100%; border: 1px solid #ccc; display: none; }
+  :root {
+    color-scheme: light dark;
+    --border: #767676;
+    --focus: #0b5fff;
+    --bg: Canvas;
+    --fg: CanvasText;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    padding: 1rem 1.25rem 3rem;
+    color: var(--fg);
+    background: var(--bg);
+    max-width: 64rem;
+  }
+  h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+  h3 { font-size: 1rem; margin: 1rem 0 0.4rem; }
+  p.muted, span.muted { color: GrayText; font-size: 0.85rem; }
+  section.panel { margin-top: 1rem; }
+  form.inline-form {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+  }
+  fieldset { border: 1px solid var(--border); border-radius: 4px; margin: 0.5rem 0; }
+  label { display: inline-block; margin: 0.25rem 0.5rem 0.25rem 0; font-size: 0.9rem; }
+  label > span { display: block; margin-bottom: 0.15rem; }
+  input, select, textarea, button {
+    font: inherit;
+    padding: 0.35rem 0.5rem;
+  }
+  textarea { width: 100%; min-height: 4rem; font-family: monospace; }
+  button {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+  button:hover { filter: brightness(0.95); }
+  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; }
+  caption { text-align: left; font-weight: 600; margin-bottom: 0.25rem; }
+  th, td { border: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; vertical-align: top; }
+  th { background: color-mix(in srgb, Canvas 90%, CanvasText 10%); }
+  td.actions button { margin: 0 0.25rem 0.25rem 0; }
+  .status-badge {
+    display: inline-block;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .status-known, .status-active, .status-promoted, .status-pass { border-color: #1a7f37; }
+  .status-unknown, .status-collecting, .status-candidate { border-color: #9a6700; }
+  .status-liveness_failed, .status-deleted, .status-rejected, .status-fail, .status-expired { border-color: #cf222e; }
+  [role="tablist"] { display: flex; gap: 0.25rem; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
+  [role="tab"] {
+    background: none;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 0.5rem 0.9rem;
+  }
+  [role="tab"][aria-selected="true"] {
+    border-color: var(--border);
+    background: Canvas;
+    font-weight: 700;
+  }
+  [role="tabpanel"] { padding-top: 0.75rem; }
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  #preview-img { max-width: 100%; border: 1px solid var(--border); display: none; margin-top: 0.5rem; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+  @media (prefers-contrast: more) {
+    button, input, select, textarea, table, th, td { border-width: 2px; }
+  }
 </style>
 </head>
 <body>
@@ -24,218 +104,1090 @@
   Closing this page has no effect on the running service.
 </p>
 
-<section>
-  <label>Bearer token (kept only in this page's memory, never stored): </label>
-  <input id="token" type="password" placeholder="paste API auth_token if configured">
-  <button onclick="refreshAll()">Connect / Refresh</button>
-  <span id="health-status" class="muted"></span>
+<section id="connect-section" class="panel">
+  <form id="connect-form" class="inline-form" autocomplete="off">
+    <label for="token">
+      <span>Bearer token (kept only in this page's memory; never stored)</span>
+      <input id="token" name="token" type="password" autocomplete="off" spellcheck="false">
+    </label>
+    <button id="connect-btn" type="submit">Connect / Refresh</button>
+    <span id="connection-status" role="status" aria-live="polite" class="muted"></span>
+  </form>
 </section>
 
-<section>
+<div role="tablist" aria-label="Dashboard sections" id="tablist">
+  <button role="tab" id="tab-webcam" aria-controls="panel-webcam" aria-selected="true" tabindex="0" type="button">Webcam</button>
+  <button role="tab" id="tab-faces" aria-controls="panel-faces" aria-selected="false" tabindex="-1" type="button">Faces / Candidates</button>
+  <button role="tab" id="tab-profiles" aria-controls="panel-profiles" aria-selected="false" tabindex="-1" type="button">Profiles</button>
+  <button role="tab" id="tab-system" aria-controls="panel-system" aria-selected="false" tabindex="-1" type="button">System</button>
+</div>
+
+<!-- ===================== Webcam ===================== -->
+<section id="panel-webcam" class="panel" role="tabpanel" aria-labelledby="tab-webcam" tabindex="0">
   <h2>Webcam preview</h2>
   <p class="muted">
     A server-drawn, bounded-rate snapshot (boxes and labels only, never a raw
     stream) polled from <code>/api/v1/preview/latest.jpg</code>. Only appears
-    when the deployment's configuration enables it; this page draws nothing
-    itself. Polling starts after Connect/Refresh and pauses while this tab is
-    hidden.
+    when this deployment's configuration enables it; this page draws nothing
+    itself.
   </p>
-  <img id="preview-img" alt="Webcam preview">
-  <p id="preview-status" class="muted"></p>
+
+  <h3>State</h3>
+  <p class="muted">
+    Three distinct, independent states -- read the labels, not just the color:
+  </p>
+  <dl>
+    <dt>Local preview visibility</dt>
+    <dd id="preview-visibility-state" class="status-badge status-unknown">unknown</dd>
+    <dt>Server processing (pause/resume)</dt>
+    <dd id="worker-processing-state" class="status-badge status-unknown">unknown</dd>
+    <dt>Camera</dt>
+    <dd id="camera-enabled-state" class="status-badge status-unknown">unknown</dd>
+  </dl>
+  <p class="muted" id="camera-note">
+    This API does not expose a camera stop/start control; pausing stops
+    processing new frames but leaves the frame source open. See
+    RUN_DEPLOY.md.
+  </p>
+
+  <h3>Controls</h3>
+  <p>
+    <button id="preview-start-btn" type="button">Start preview polling</button>
+    <button id="preview-stop-btn" type="button" disabled>Stop preview polling</button>
+    <button id="preview-hide-btn" type="button" aria-pressed="false" disabled>Hide preview</button>
+  </p>
+  <img id="preview-img" alt="Server-annotated webcam preview snapshot">
+  <p id="preview-status" role="status" aria-live="polite" class="muted"></p>
 </section>
 
-<section>
-  <h2>Profiles</h2>
-  <table id="profiles-table"><thead><tr>
-    <th>Display name</th><th>Status</th><th>Priority</th><th>Version</th><th>Actions</th>
-  </tr></thead><tbody></tbody></table>
-</section>
+<!-- ===================== Faces / Candidates ===================== -->
+<section id="panel-faces" class="panel" role="tabpanel" aria-labelledby="tab-faces" tabindex="0" hidden>
+  <h2>Current faces</h2>
+  <p class="muted">
+    Privacy-safe per-track metadata from <code>GET /api/v1/faces</code>: never
+    images, crops, or embeddings. This page makes no recognition decisions of
+    its own -- state, labels, and IDs are exactly what the server reports.
+  </p>
+  <p id="faces-status" role="status" aria-live="polite" class="muted"></p>
+  <table id="faces-table">
+    <caption>Currently tracked faces</caption>
+    <thead><tr>
+      <th scope="col">Track</th><th scope="col">State</th><th scope="col">Identity</th>
+      <th scope="col">Quality</th><th scope="col">Last observed</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
 
-<section>
   <h2>Candidates</h2>
-  <p>Manual review controls remain available when automatic promotion is disabled. In automatic mode, qualified candidates may already be promoted before they appear here.</p>
-  <table id="candidates-table"><thead><tr>
-    <th>Temporary name</th><th>Status</th><th>Samples</th><th>Actions</th>
-  </tr></thead><tbody></tbody></table>
+  <p class="muted">
+    Manual review controls remain available when automatic promotion is
+    disabled. In automatic mode, qualified candidates may already be promoted
+    before they appear here.
+  </p>
+  <p id="candidates-status" role="status" aria-live="polite" class="muted"></p>
+  <table id="candidates-table">
+    <caption>Enrollment candidates</caption>
+    <thead><tr>
+      <th scope="col">Temporary name</th><th scope="col">Status</th>
+      <th scope="col">Samples</th><th scope="col">Actions</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <form id="candidate-review-form" class="inline-form" hidden>
+    <h3 id="candidate-review-heading">Review candidate</h3>
+    <input type="hidden" id="review-candidate-id">
+    <input type="hidden" id="review-action">
+    <div id="review-reviewer-field">
+      <label for="review-reviewed-by">
+        <span>Reviewer name</span>
+        <input id="review-reviewed-by" type="text" required maxlength="200">
+      </label>
+    </div>
+    <div id="review-reason-field" hidden>
+      <label for="review-reason">
+        <span>Rejection reason</span>
+        <input id="review-reason" type="text" maxlength="200">
+      </label>
+    </div>
+    <button type="submit" id="review-submit-btn">Submit</button>
+    <button type="button" id="review-cancel-btn">Cancel</button>
+    <p id="review-error" role="alert" class="muted"></p>
+  </form>
 </section>
 
-<section>
+<!-- ===================== Profiles ===================== -->
+<section id="panel-profiles" class="panel" role="tabpanel" aria-labelledby="tab-profiles" tabindex="0" hidden>
+  <h2>Profiles</h2>
+  <p id="profiles-status" role="status" aria-live="polite" class="muted"></p>
+  <table id="profiles-table">
+    <caption>Saved profiles</caption>
+    <thead><tr>
+      <th scope="col">Display name</th><th scope="col">Status</th><th scope="col">Priority</th>
+      <th scope="col">Version</th><th scope="col">Actions</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h3>Create profile</h3>
+  <form id="create-profile-form" class="inline-form">
+    <label for="create-display-name">
+      <span>Display name</span>
+      <input id="create-display-name" type="text" required minlength="1" maxlength="200">
+    </label>
+    <label for="create-priority">
+      <span>Priority</span>
+      <input id="create-priority" type="number" value="0" min="0" max="1000">
+    </label>
+    <label for="create-is-owner">
+      <input id="create-is-owner" type="checkbox">
+      <span>Owner</span>
+    </label>
+    <button type="submit">Create profile</button>
+    <p id="create-profile-error" role="alert" class="muted"></p>
+  </form>
+
+  <form id="edit-profile-form" class="inline-form" hidden>
+    <h3 id="edit-profile-heading">Edit profile</h3>
+    <input type="hidden" id="edit-profile-id">
+    <input type="hidden" id="edit-profile-version">
+    <label for="edit-display-name">
+      <span>Display name</span>
+      <input id="edit-display-name" type="text" minlength="1" maxlength="200">
+    </label>
+    <label for="edit-status">
+      <span>Status</span>
+      <select id="edit-status">
+        <option value="">(unchanged)</option>
+        <option value="candidate">candidate</option>
+        <option value="active">active</option>
+        <option value="disabled">disabled</option>
+        <option value="merged">merged</option>
+        <option value="deleted">deleted</option>
+      </select>
+    </label>
+    <label for="edit-priority">
+      <span>Priority</span>
+      <input id="edit-priority" type="number" min="0" max="1000">
+    </label>
+    <button type="submit">Save changes</button>
+    <button type="button" id="edit-profile-cancel-btn">Cancel</button>
+    <p id="edit-profile-error" role="alert" class="muted"></p>
+  </form>
+
+  <form id="settings-form" class="inline-form" hidden>
+    <h3 id="settings-heading">Profile settings</h3>
+    <input type="hidden" id="settings-profile-id">
+    <label for="settings-volume">
+      <span>Volume (0-100)</span>
+      <input id="settings-volume" type="number" min="0" max="100">
+    </label>
+    <label for="settings-brightness">
+      <span>Brightness (0-100)</span>
+      <input id="settings-brightness" type="number" min="0" max="100">
+    </label>
+    <button type="submit">Save settings</button>
+    <button type="button" id="settings-cancel-btn">Cancel</button>
+    <p id="settings-status" role="status" aria-live="polite" class="muted"></p>
+  </form>
+
+  <details>
+    <summary>Merge profiles</summary>
+    <form id="merge-form" class="inline-form">
+      <label for="merge-source-id">
+        <span>Source profile ID</span>
+        <input id="merge-source-id" type="text" required>
+      </label>
+      <label for="merge-source-version">
+        <span>Source expected version</span>
+        <input id="merge-source-version" type="number" required min="1">
+      </label>
+      <label for="merge-target-id">
+        <span>Target profile ID</span>
+        <input id="merge-target-id" type="text" required>
+      </label>
+      <label for="merge-target-version">
+        <span>Target expected version</span>
+        <input id="merge-target-version" type="number" required min="1">
+      </label>
+      <button type="submit">Merge (requires confirmation)</button>
+      <p id="merge-error" role="alert" class="muted"></p>
+    </form>
+  </details>
+
+  <details>
+    <summary>Export profile</summary>
+    <form id="export-form" class="inline-form">
+      <label for="export-profile-id">
+        <span>Profile ID</span>
+        <input id="export-profile-id" type="text" required>
+      </label>
+      <button type="submit">Export (requires confirmation)</button>
+      <label for="export-output">
+        <span>Exported blob (base64)</span>
+        <textarea id="export-output" readonly aria-readonly="true"></textarea>
+      </label>
+      <p id="export-error" role="alert" class="muted"></p>
+    </form>
+  </details>
+
+  <details>
+    <summary>Import profile</summary>
+    <form id="import-form" class="inline-form">
+      <label for="import-input">
+        <span>Blob (base64)</span>
+        <textarea id="import-input" required></textarea>
+      </label>
+      <button type="submit">Import (requires confirmation)</button>
+      <p id="import-error" role="alert" class="muted"></p>
+    </form>
+  </details>
+</section>
+
+<!-- ===================== System ===================== -->
+<section id="panel-system" class="panel" role="tabpanel" aria-labelledby="tab-system" tabindex="0" hidden>
+  <h2>Health, status, and metrics</h2>
+  <p id="system-status" role="status" aria-live="polite" class="muted"></p>
+  <dl id="status-list"></dl>
+
+  <h3>Processing control</h3>
+  <p>
+    <button id="pause-btn" type="button">Pause processing</button>
+    <button id="resume-btn" type="button">Resume processing</button>
+  </p>
+  <p class="muted">
+    Pausing stops new-frame processing and immediately clears any cached
+    preview frame; it does not close the camera (see the Webcam tab).
+  </p>
+
+  <h2>Capabilities and privacy configuration</h2>
+  <dl id="capabilities-list"></dl>
+
   <h2>Recent events</h2>
-  <table id="events-table"><thead><tr>
-    <th>Sequence</th><th>Type</th><th>Profile</th><th>Occurred at</th>
-  </tr></thead><tbody></tbody></table>
+  <table id="events-table">
+    <caption>Most recent durable events</caption>
+    <thead><tr>
+      <th scope="col">Sequence</th><th scope="col">Type</th><th scope="col">Profile</th><th scope="col">Occurred at</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
 </section>
 
 <script>
+"use strict";
+
+/* ---------------------------------------------------------------------
+ * Small DOM-safety and validation helpers. No API-derived value is ever
+ * passed through innerHTML/insertAdjacentHTML anywhere in this file.
+ * ------------------------------------------------------------------- */
+
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  attrs = attrs || {};
+  for (const key of Object.keys(attrs)) {
+    const value = attrs[key];
+    if (value === null || value === undefined) continue;
+    if (key === "class") node.className = value;
+    else if (key.startsWith("on") && typeof value === "function") {
+      node.addEventListener(key.slice(2), value);
+    } else {
+      node.setAttribute(key, String(value));
+    }
+  }
+  for (const child of children || []) {
+    if (child === null || child === undefined) continue;
+    node.append(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(value) { return typeof value === "string" && UUID_RE.test(value); }
+function safeText(value, fallback) {
+  return typeof value === "string" && value.length > 0 ? value : (fallback === undefined ? "" : fallback);
+}
+function safeNumber(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+function safeEnum(value, allowed, fallback) {
+  return typeof value === "string" && allowed.has(value) ? value : fallback;
+}
+function statusBadge(value, allowed) {
+  const safe = safeEnum(value, allowed, "unknown");
+  return el("span", { class: "status-badge status-" + safe }, [safe]);
+}
+
+const PROFILE_STATUSES = new Set(["candidate", "active", "disabled", "merged", "deleted"]);
+const CANDIDATE_STATUSES = new Set(["collecting", "expired", "rejected", "ready_for_review", "promoted"]);
+const FACE_STATES = new Set(["known", "unknown", "liveness_failed"]);
+const WORKER_STATES = new Set(["stopped", "running", "paused", "failed"]);
+
+/* ---------------------------------------------------------------------
+ * Centralized API access: timeout/abort handling and a normalized error
+ * parser that tolerates both {detail:{error_code,message}} (the current
+ * HTTPException shape used by every domain route) and the middleware's
+ * top-level {error_code, ...} shape, without requiring a backend change.
+ * ------------------------------------------------------------------- */
+
+class ApiError extends Error {
+  constructor(status, code, message) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 function authHeaders() {
-  const token = document.getElementById('token').value;
-  return token ? { 'Authorization': 'Bearer ' + token } : {};
+  const token = document.getElementById("token").value;
+  return token ? { Authorization: "Bearer " + token } : {};
 }
 
-async function apiGet(path) {
-  const response = await fetch(path, { headers: authHeaders() });
-  if (!response.ok) throw new Error(path + ' -> ' + response.status);
-  return response.json();
+function parseErrorPayload(payload) {
+  if (payload && typeof payload === "object") {
+    if (payload.detail && typeof payload.detail === "object") {
+      return {
+        code: safeText(payload.detail.error_code, "unknown_error"),
+        message: safeText(payload.detail.message, "request failed"),
+      };
+    }
+    if (typeof payload.error_code === "string") {
+      return { code: payload.error_code, message: safeText(payload.message, "request failed") };
+    }
+  }
+  return { code: "unknown_error", message: "request failed" };
 }
 
-async function apiPost(path, body) {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {}),
-  });
-  if (!response.ok) throw new Error(path + ' -> ' + response.status);
-  return response.json();
+function combineSignals(signals) {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (!signal) continue;
+    if (signal.aborted) { controller.abort(); break; }
+    signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  return controller.signal;
 }
 
-// Webcam preview polling. Deliberately conservative: ~1.7 req/s stays well
-// under the API's fixed-window rate limiter (120/min) even as the sole
-// recurring client-side timer on this page, while still tracking the
-// server's own ~5 FPS generation cadence closely enough to read as "near
-// live". `previewInFlight` prevents overlapping requests if one fetch is
-// slow; the object URL from the previous frame is always revoked before (or
-// instead of) creating the next one, so this never accumulates blob memory.
+async function apiRequest(path, options) {
+  options = options || {};
+  const method = options.method || "GET";
+  const timeoutMs = options.timeoutMs || 8000;
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const signal = combineSignals([options.signal, timeoutController.signal]);
+  const headers = options.body !== undefined
+    ? Object.assign({ "Content-Type": "application/json" }, authHeaders())
+    : authHeaders();
+  let response;
+  try {
+    response = await fetch(path, {
+      method: method,
+      headers: headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: signal,
+      cache: "no-store",
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    if (error && error.name === "AbortError") {
+      throw new ApiError(0, "request_aborted", "the request was aborted or timed out");
+    }
+    throw new ApiError(0, "network_error", String(error));
+  }
+  clearTimeout(timer);
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+  if (!response.ok) {
+    const parsed = parseErrorPayload(payload);
+    throw new ApiError(response.status, parsed.code, parsed.message);
+  }
+  return payload;
+}
+
+/* ---------------------------------------------------------------------
+ * Guarded refresh: per-category request cancellation (abort the previous
+ * in-flight request) plus a generation counter so a slow, superseded
+ * response can never overwrite newer state -- covers both the "refresh
+ * cancellation" and "no overlapping timers" requirements together.
+ * ------------------------------------------------------------------- */
+
+const _abortControllers = {};
+const _generations = {};
+
+function makeGuardedRefresh(category, loader, onSuccess, onError) {
+  return async function refresh() {
+    if (_abortControllers[category]) _abortControllers[category].abort();
+    const controller = new AbortController();
+    _abortControllers[category] = controller;
+    const gen = (_generations[category] = (_generations[category] || 0) + 1);
+    let data;
+    try {
+      data = await loader(controller.signal);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "request_aborted") return;
+      if (_generations[category] === gen) onError(error);
+      return;
+    }
+    if (_generations[category] === gen) onSuccess(data);
+  };
+}
+
+/* ---------------------------------------------------------------------
+ * Polling registry: one named timer at a time, only while its owning tab
+ * is active and the document is visible.
+ * ------------------------------------------------------------------- */
+
+const _pollers = new Map();
+function stopPoll(name) {
+  const id = _pollers.get(name);
+  if (id !== undefined) { clearInterval(id); _pollers.delete(name); }
+}
+function stopAllPolls() {
+  for (const name of Array.from(_pollers.keys())) stopPoll(name);
+}
+function startPoll(name, fn, intervalMs) {
+  stopPoll(name);
+  fn();
+  _pollers.set(name, setInterval(fn, intervalMs));
+}
+
+/* ---------------------------------------------------------------------
+ * Tabs: WAI-ARIA tabs pattern with roving tabindex, Left/Right/Home/End
+ * keyboard support, and hidden panels.
+ * ------------------------------------------------------------------- */
+
+const TAB_NAMES = ["webcam", "faces", "profiles", "system"];
+let activeTab = "webcam";
+
+function tabButton(name) { return document.getElementById("tab-" + name); }
+function tabPanel(name) { return document.getElementById("panel-" + name); }
+
+function activateTab(name, options) {
+  options = options || {};
+  activeTab = name;
+  for (const candidate of TAB_NAMES) {
+    const selected = candidate === name;
+    tabButton(candidate).setAttribute("aria-selected", String(selected));
+    tabButton(candidate).tabIndex = selected ? 0 : -1;
+    tabPanel(candidate).hidden = !selected;
+  }
+  if (options.focus) tabButton(name).focus();
+  refreshActiveTabPolling();
+  refreshActiveTabData();
+}
+
+document.getElementById("tablist").addEventListener("click", (event) => {
+  const button = event.target.closest("[role=tab]");
+  if (!button) return;
+  const name = button.id.replace("tab-", "");
+  activateTab(name);
+});
+
+document.getElementById("tablist").addEventListener("keydown", (event) => {
+  const currentIndex = TAB_NAMES.indexOf(activeTab);
+  let nextIndex = null;
+  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % TAB_NAMES.length;
+  else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + TAB_NAMES.length) % TAB_NAMES.length;
+  else if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = TAB_NAMES.length - 1;
+  if (nextIndex === null) return;
+  event.preventDefault();
+  activateTab(TAB_NAMES[nextIndex], { focus: true });
+});
+
+function refreshActiveTabData() {
+  if (activeTab === "webcam") refreshWebcamState();
+  else if (activeTab === "faces") { refreshFaces(); refreshCandidates(); }
+  else if (activeTab === "profiles") refreshProfiles();
+  else if (activeTab === "system") { refreshStatus(); refreshCapabilities(); refreshEvents(); }
+}
+
+function refreshActiveTabPolling() {
+  stopAllPolls();
+  if (document.hidden) return;
+  if (activeTab === "webcam") {
+    startPoll("webcam-state", refreshWebcamState, 5000);
+  } else if (activeTab === "faces") {
+    startPoll("faces", refreshFaces, 3000);
+    startPoll("candidates", refreshCandidates, 5000);
+  } else if (activeTab === "profiles") {
+    startPoll("profiles", refreshProfiles, 8000);
+  } else if (activeTab === "system") {
+    startPoll("status", refreshStatus, 3000);
+    startPoll("events", refreshEvents, 5000);
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopAllPolls();
+    stopPreviewPolling({ keepUserIntent: true });
+  } else {
+    refreshActiveTabPolling();
+    if (previewUserStarted) startPreviewPolling();
+  }
+});
+
+/* ---------------------------------------------------------------------
+ * Connect / token
+ * ------------------------------------------------------------------- */
+
+document.getElementById("connect-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  refreshConnectionStatus();
+  refreshActiveTabData();
+});
+
+async function refreshConnectionStatus() {
+  const statusEl = document.getElementById("connection-status");
+  try {
+    await apiRequest("/api/v1/health");
+    statusEl.textContent = "connected";
+  } catch (error) {
+    statusEl.textContent = "unreachable: " + error.message;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Webcam tab
+ * ------------------------------------------------------------------- */
+
 const PREVIEW_POLL_MS = 600;
+let previewUserStarted = false;
+let previewHiddenLocally = false;
 let previewTimer = null;
 let previewInFlight = false;
 let previewObjectUrl = null;
 
-function stopPreview() {
-  if (previewTimer !== null) {
-    clearInterval(previewTimer);
-    previewTimer = null;
-  }
+function revokePreviewUrl() {
   if (previewObjectUrl) {
     URL.revokeObjectURL(previewObjectUrl);
     previewObjectUrl = null;
   }
-  document.getElementById('preview-img').style.display = 'none';
+}
+
+function updatePreviewVisibilityState() {
+  const el2 = document.getElementById("preview-visibility-state");
+  const label = !previewUserStarted ? "polling stopped" : (previewHiddenLocally ? "hidden" : "visible");
+  el2.textContent = label;
+  el2.className = "status-badge status-" + (label === "visible" ? "known" : label === "hidden" ? "unknown" : "expired");
 }
 
 async function pollPreviewOnce() {
   if (previewInFlight) return;
   previewInFlight = true;
-  const statusEl = document.getElementById('preview-status');
+  const statusEl = document.getElementById("preview-status");
   try {
-    const response = await fetch('/api/v1/preview/latest.jpg', {
-      headers: authHeaders(),
-      cache: 'no-store',
-    });
+    const response = await fetch("/api/v1/preview/latest.jpg", { headers: authHeaders(), cache: "no-store" });
     if (response.status === 404) {
-      statusEl.textContent = 'preview disabled for this deployment';
-      stopPreview();
+      statusEl.textContent = "preview disabled for this deployment";
+      stopPreviewPolling({});
       return;
     }
-    if (response.status === 409) {
-      statusEl.textContent = 'preview unavailable: pipeline worker is not running';
-      return;
-    }
-    if (response.status === 503) {
-      statusEl.textContent = 'preview not ready yet';
-      return;
-    }
-    if (!response.ok) {
-      statusEl.textContent = 'preview error: ' + response.status;
-      return;
-    }
+    if (response.status === 409) { statusEl.textContent = "preview unavailable: pipeline worker is not running"; return; }
+    if (response.status === 503) { statusEl.textContent = "preview not ready yet (paused or just started)"; return; }
+    if (!response.ok) { statusEl.textContent = "preview error: " + response.status; return; }
     const blob = await response.blob();
+    if (previewHiddenLocally) {
+      // Local-only hide: keep polling (server state) but never display or
+      // retain this frame's bytes.
+      statusEl.textContent = "preview hidden locally";
+      return;
+    }
     const nextUrl = URL.createObjectURL(blob);
-    const img = document.getElementById('preview-img');
+    const img = document.getElementById("preview-img");
     img.src = nextUrl;
-    img.style.display = 'block';
-    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    img.style.display = "block";
+    revokePreviewUrl();
     previewObjectUrl = nextUrl;
-    statusEl.textContent = '';
+    statusEl.textContent = "";
   } catch (error) {
-    statusEl.textContent = 'preview error: ' + error;
+    statusEl.textContent = "preview error: " + error;
   } finally {
     previewInFlight = false;
   }
 }
 
-function startPreview() {
+function startPreviewPolling() {
+  previewUserStarted = true;
+  document.getElementById("preview-start-btn").disabled = true;
+  document.getElementById("preview-stop-btn").disabled = false;
+  document.getElementById("preview-hide-btn").disabled = false;
+  updatePreviewVisibilityState();
   if (previewTimer !== null || document.hidden) return;
   pollPreviewOnce();
   previewTimer = setInterval(pollPreviewOnce, PREVIEW_POLL_MS);
 }
 
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    stopPreview();
-  } else {
-    startPreview();
+function stopPreviewPolling(opts) {
+  if (previewTimer !== null) { clearInterval(previewTimer); previewTimer = null; }
+  if (!opts || !opts.keepUserIntent) {
+    previewUserStarted = false;
+    document.getElementById("preview-start-btn").disabled = false;
+    document.getElementById("preview-stop-btn").disabled = true;
+    document.getElementById("preview-hide-btn").disabled = true;
+  }
+  revokePreviewUrl();
+  document.getElementById("preview-img").style.display = "none";
+  updatePreviewVisibilityState();
+}
+
+function togglePreviewHidden() {
+  previewHiddenLocally = !previewHiddenLocally;
+  document.getElementById("preview-hide-btn").setAttribute("aria-pressed", String(previewHiddenLocally));
+  document.getElementById("preview-hide-btn").textContent = previewHiddenLocally ? "Show preview" : "Hide preview";
+  if (previewHiddenLocally) {
+    revokePreviewUrl();
+    document.getElementById("preview-img").style.display = "none";
+  }
+  updatePreviewVisibilityState();
+}
+
+document.getElementById("preview-start-btn").addEventListener("click", startPreviewPolling);
+document.getElementById("preview-stop-btn").addEventListener("click", () => stopPreviewPolling({}));
+document.getElementById("preview-hide-btn").addEventListener("click", togglePreviewHidden);
+window.addEventListener("beforeunload", () => stopPreviewPolling({}));
+
+const refreshWebcamState = makeGuardedRefresh(
+  "webcam-state",
+  async (signal) => {
+    const [status, capabilities] = await Promise.all([
+      apiRequest("/api/v1/status", { signal: signal }),
+      apiRequest("/api/v1/system/capabilities", { signal: signal }),
+    ]);
+    return { status: status, capabilities: capabilities };
+  },
+  (data) => {
+    const workerEl = document.getElementById("worker-processing-state");
+    const workerState = safeEnum(data.status.worker_state, WORKER_STATES, "unknown");
+    workerEl.textContent = workerState;
+    workerEl.className = "status-badge status-" + (workerState === "running" ? "known" : workerState === "paused" ? "collecting" : workerState === "failed" ? "rejected" : "unknown");
+    const cameraEl = document.getElementById("camera-enabled-state");
+    const cameraEnabled = data.capabilities.camera_enabled === true;
+    cameraEl.textContent = cameraEnabled ? "enabled" : "disabled";
+    cameraEl.className = "status-badge status-" + (cameraEnabled ? "known" : "unknown");
+  },
+  (error) => {
+    document.getElementById("worker-processing-state").textContent = "error: " + error.message;
+    document.getElementById("camera-enabled-state").textContent = "error: " + error.message;
+  }
+);
+
+/* ---------------------------------------------------------------------
+ * Faces / Candidates tab
+ * ------------------------------------------------------------------- */
+
+const refreshFaces = makeGuardedRefresh(
+  "faces",
+  (signal) => apiRequest("/api/v1/faces", { signal: signal }),
+  (data) => {
+    document.getElementById("faces-status").textContent = "";
+    const tbody = document.querySelector("#faces-table tbody");
+    const rows = (data.items || []).map(renderFaceRow);
+    tbody.replaceChildren(...rows);
+  },
+  (error) => { document.getElementById("faces-status").textContent = "error: " + error.message; }
+);
+
+function renderFaceRow(face) {
+  const trackId = safeNumber(face.track_id, null);
+  const identityParts = [];
+  if (typeof face.display_label === "string" && face.display_label) identityParts.push(face.display_label);
+  if (isUuid(face.profile_id)) identityParts.push("profile " + face.profile_id);
+  else if (isUuid(face.candidate_id)) identityParts.push("candidate " + face.candidate_id);
+  const identity = identityParts.length > 0 ? identityParts.join(" — ") : "—";
+  const quality = safeNumber(face.quality_score, null);
+  const observed = safeText(face.last_observed_at, "—");
+  return el("tr", {}, [
+    el("td", {}, [trackId === null ? "—" : String(trackId)]),
+    el("td", {}, [statusBadge(face.state, FACE_STATES)]),
+    el("td", {}, [identity]),
+    el("td", {}, [quality === null ? "—" : quality.toFixed(2)]),
+    el("td", {}, [observed]),
+  ]);
+}
+
+const refreshCandidates = makeGuardedRefresh(
+  "candidates",
+  (signal) => apiRequest("/api/v1/candidates", { signal: signal }),
+  (data) => {
+    document.getElementById("candidates-status").textContent = "";
+    const tbody = document.querySelector("#candidates-table tbody");
+    const rows = (data.items || []).map(renderCandidateRow);
+    tbody.replaceChildren(...rows);
+  },
+  (error) => { document.getElementById("candidates-status").textContent = "error: " + error.message; }
+);
+
+function renderCandidateRow(candidate) {
+  const id = isUuid(candidate.id) ? candidate.id : null;
+  const name = safeText(candidate.temporary_name, "(unnamed)");
+  const sampleCount = safeNumber(candidate.sample_count, 0);
+  const actions = el("td", { class: "actions" });
+  if (id) {
+    actions.append(
+      el("button", { type: "button", "aria-label": "Approve " + name, onclick: () => openCandidateReview(id, name, "approve") }, ["Approve"]),
+      el("button", { type: "button", "aria-label": "Reject " + name, onclick: () => openCandidateReview(id, name, "reject") }, ["Reject"]),
+      el("button", { type: "button", "aria-label": "Delete " + name, onclick: () => deleteCandidate(id, name) }, ["Delete"]),
+    );
+  }
+  return el("tr", {}, [
+    el("td", {}, [name]),
+    el("td", {}, [statusBadge(candidate.status, CANDIDATE_STATUSES)]),
+    el("td", {}, [String(sampleCount)]),
+    actions,
+  ]);
+}
+
+function openCandidateReview(id, name, action) {
+  document.getElementById("review-candidate-id").value = id;
+  document.getElementById("review-action").value = action;
+  document.getElementById("candidate-review-heading").textContent =
+    (action === "approve" ? "Approve" : "Reject") + " candidate: " + name;
+  document.getElementById("review-reason-field").hidden = action !== "reject";
+  document.getElementById("review-reason").required = action === "reject";
+  document.getElementById("review-error").textContent = "";
+  const form = document.getElementById("candidate-review-form");
+  form.hidden = false;
+  document.getElementById(action === "reject" ? "review-reason" : "review-reviewed-by").focus();
+}
+
+document.getElementById("review-cancel-btn").addEventListener("click", () => {
+  document.getElementById("candidate-review-form").hidden = true;
+});
+
+document.getElementById("candidate-review-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const id = document.getElementById("review-candidate-id").value;
+  const action = document.getElementById("review-action").value;
+  const reviewedBy = document.getElementById("review-reviewed-by").value.trim();
+  const reason = document.getElementById("review-reason").value.trim();
+  const errorEl = document.getElementById("review-error");
+  errorEl.textContent = "";
+  try {
+    if (action === "approve") {
+      await apiRequest("/api/v1/candidates/" + encodeURIComponent(id) + "/approve", {
+        method: "POST", body: { reviewed_by: reviewedBy },
+      });
+    } else {
+      await apiRequest("/api/v1/candidates/" + encodeURIComponent(id) + "/reject", {
+        method: "POST", body: { reason: reason, reviewed_by: reviewedBy || null },
+      });
+    }
+    document.getElementById("candidate-review-form").hidden = true;
+    refreshCandidates();
+    refreshFaces();
+  } catch (error) {
+    errorEl.textContent = "error: " + error.message;
   }
 });
-window.addEventListener('beforeunload', stopPreview);
 
-async function approveCandidate(id) {
-  const reviewedBy = prompt('Reviewer name for approval:');
-  if (!reviewedBy) return;
-  await apiPost(`/api/v1/candidates/${id}/approve`, { reviewed_by: reviewedBy });
-  await refreshAll();
-}
-
-async function rejectCandidate(id) {
-  const reason = prompt('Rejection reason:');
-  if (!reason) return;
-  await apiPost(`/api/v1/candidates/${id}/reject`, { reason: reason });
-  await refreshAll();
-}
-
-async function refreshAll() {
-  const statusEl = document.getElementById('health-status');
+async function deleteCandidate(id, name) {
+  if (!window.confirm("Delete candidate \"" + name + "\"? This cannot be undone.")) return;
   try {
-    await apiGet('/api/v1/health');
-    statusEl.textContent = 'connected';
-    startPreview();
+    await apiRequest("/api/v1/candidates/" + encodeURIComponent(id), { method: "DELETE" });
+    refreshCandidates();
   } catch (error) {
-    statusEl.textContent = 'unreachable: ' + error;
-    stopPreview();
-    return;
+    document.getElementById("candidates-status").textContent = "error: " + error.message;
   }
-
-  try {
-    const profiles = await apiGet('/api/v1/profiles');
-    const tbody = document.querySelector('#profiles-table tbody');
-    tbody.innerHTML = '';
-    for (const p of profiles.items) {
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${p.display_name}</td><td>${p.status}</td><td>${p.priority}</td><td>${p.optimistic_version}</td><td></td>`;
-      tbody.appendChild(row);
-    }
-  } catch (error) { /* API/database may be disabled; leave table empty */ }
-
-  try {
-    const candidates = await apiGet('/api/v1/candidates');
-    const tbody = document.querySelector('#candidates-table tbody');
-    tbody.innerHTML = '';
-    for (const c of candidates.items) {
-      const row = document.createElement('tr');
-      const actions = document.createElement('td');
-      const approveBtn = document.createElement('button');
-      approveBtn.textContent = 'Approve';
-      approveBtn.onclick = () => approveCandidate(c.id);
-      const rejectBtn = document.createElement('button');
-      rejectBtn.textContent = 'Reject';
-      rejectBtn.onclick = () => rejectCandidate(c.id);
-      actions.append(approveBtn, rejectBtn);
-      row.innerHTML = `<td>${c.temporary_name}</td><td>${c.status}</td><td>${c.sample_count}</td>`;
-      row.appendChild(actions);
-      tbody.appendChild(row);
-    }
-  } catch (error) { /* enrollment may be disabled */ }
-
-  try {
-    const events = await apiGet('/api/v1/events');
-    const tbody = document.querySelector('#events-table tbody');
-    tbody.innerHTML = '';
-    for (const e of events.items) {
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${e.sequence}</td><td>${e.event_type}</td><td>${e.profile_id || ''}</td><td>${e.occurred_at}</td>`;
-      tbody.appendChild(row);
-    }
-  } catch (error) { /* database may be disabled */ }
 }
+
+/* ---------------------------------------------------------------------
+ * Profiles tab
+ * ------------------------------------------------------------------- */
+
+const refreshProfiles = makeGuardedRefresh(
+  "profiles",
+  (signal) => apiRequest("/api/v1/profiles", { signal: signal }),
+  (data) => {
+    document.getElementById("profiles-status").textContent = "";
+    const tbody = document.querySelector("#profiles-table tbody");
+    const rows = (data.items || []).map(renderProfileRow);
+    tbody.replaceChildren(...rows);
+  },
+  (error) => { document.getElementById("profiles-status").textContent = "error: " + error.message; }
+);
+
+function renderProfileRow(profile) {
+  const id = isUuid(profile.id) ? profile.id : null;
+  const name = safeText(profile.display_name, "(unnamed)");
+  const priority = safeNumber(profile.priority, 0);
+  const version = safeNumber(profile.optimistic_version, 0);
+  const actions = el("td", { class: "actions" });
+  if (id) {
+    actions.append(
+      el("button", { type: "button", "aria-label": "Edit " + name, onclick: () => openProfileEditor(profile) }, ["Edit"]),
+      el("button", { type: "button", "aria-label": "Settings for " + name, onclick: () => openProfileSettings(id, name) }, ["Settings"]),
+      el("button", { type: "button", "aria-label": "Delete " + name, onclick: () => deleteProfile(id, name, version) }, ["Delete"]),
+    );
+  }
+  return el("tr", {}, [
+    el("td", {}, [name]),
+    el("td", {}, [statusBadge(profile.status, PROFILE_STATUSES)]),
+    el("td", {}, [String(priority)]),
+    el("td", {}, [String(version)]),
+    actions,
+  ]);
+}
+
+document.getElementById("create-profile-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById("create-profile-error");
+  errorEl.textContent = "";
+  const displayName = document.getElementById("create-display-name").value.trim();
+  const priority = Number(document.getElementById("create-priority").value || 0);
+  const isOwner = document.getElementById("create-is-owner").checked;
+  try {
+    await apiRequest("/api/v1/profiles", {
+      method: "POST",
+      body: { display_name: displayName, priority: priority, is_owner: isOwner },
+    });
+    event.target.reset();
+    refreshProfiles();
+  } catch (error) {
+    errorEl.textContent = "error: " + error.message;
+  }
+});
+
+function openProfileEditor(profile) {
+  document.getElementById("edit-profile-id").value = profile.id;
+  document.getElementById("edit-profile-version").value = String(profile.optimistic_version);
+  document.getElementById("edit-profile-heading").textContent = "Edit profile: " + safeText(profile.display_name, "(unnamed)");
+  document.getElementById("edit-display-name").value = safeText(profile.display_name, "");
+  document.getElementById("edit-status").value = "";
+  document.getElementById("edit-priority").value = String(safeNumber(profile.priority, 0));
+  document.getElementById("edit-profile-error").textContent = "";
+  const form = document.getElementById("edit-profile-form");
+  form.hidden = false;
+  document.getElementById("edit-display-name").focus();
+}
+
+document.getElementById("edit-profile-cancel-btn").addEventListener("click", () => {
+  document.getElementById("edit-profile-form").hidden = true;
+});
+
+document.getElementById("edit-profile-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById("edit-profile-error");
+  errorEl.textContent = "";
+  const id = document.getElementById("edit-profile-id").value;
+  const expectedVersion = Number(document.getElementById("edit-profile-version").value);
+  const displayName = document.getElementById("edit-display-name").value.trim();
+  const statusValue = document.getElementById("edit-status").value;
+  const priority = document.getElementById("edit-priority").value;
+  const body = { expected_version: expectedVersion };
+  if (displayName) body.display_name = displayName;
+  if (statusValue) body.status = statusValue;
+  if (priority !== "") body.priority = Number(priority);
+  try {
+    await apiRequest("/api/v1/profiles/" + encodeURIComponent(id), { method: "PATCH", body: body });
+    document.getElementById("edit-profile-form").hidden = true;
+    refreshProfiles();
+  } catch (error) {
+    errorEl.textContent = "error: " + error.message;
+  }
+});
+
+async function deleteProfile(id, name, version) {
+  if (!window.confirm("Soft-delete profile \"" + name + "\"? This starts the configured retention timer.")) return;
+  try {
+    await apiRequest("/api/v1/profiles/" + encodeURIComponent(id) + "?expected_version=" + encodeURIComponent(version), {
+      method: "DELETE",
+    });
+    refreshProfiles();
+  } catch (error) {
+    document.getElementById("profiles-status").textContent = "error: " + error.message;
+  }
+}
+
+async function openProfileSettings(id, name) {
+  document.getElementById("settings-profile-id").value = id;
+  document.getElementById("settings-heading").textContent = "Settings: " + name;
+  const statusEl = document.getElementById("settings-status");
+  statusEl.textContent = "loading...";
+  const form = document.getElementById("settings-form");
+  form.hidden = false;
+  try {
+    const current = await apiRequest("/api/v1/profiles/" + encodeURIComponent(id) + "/settings");
+    document.getElementById("settings-volume").value = String(safeNumber(current.volume, 50));
+    document.getElementById("settings-brightness").value = String(safeNumber(current.brightness, 50));
+    statusEl.textContent = "";
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "settings_not_found") {
+      document.getElementById("settings-volume").value = "50";
+      document.getElementById("settings-brightness").value = "50";
+      statusEl.textContent = "no settings saved yet for this profile";
+    } else {
+      statusEl.textContent = "error: " + error.message;
+    }
+  }
+}
+
+document.getElementById("settings-cancel-btn").addEventListener("click", () => {
+  document.getElementById("settings-form").hidden = true;
+});
+
+document.getElementById("settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const id = document.getElementById("settings-profile-id").value;
+  const statusEl = document.getElementById("settings-status");
+  const volume = Number(document.getElementById("settings-volume").value);
+  const brightness = Number(document.getElementById("settings-brightness").value);
+  try {
+    await apiRequest("/api/v1/profiles/" + encodeURIComponent(id) + "/settings", {
+      method: "PUT", body: { volume: volume, brightness: brightness },
+    });
+    statusEl.textContent = "saved";
+  } catch (error) {
+    statusEl.textContent = "error: " + error.message;
+  }
+});
+
+document.getElementById("merge-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById("merge-error");
+  errorEl.textContent = "";
+  const sourceId = document.getElementById("merge-source-id").value.trim();
+  const targetId = document.getElementById("merge-target-id").value.trim();
+  const sourceVersion = Number(document.getElementById("merge-source-version").value);
+  const targetVersion = Number(document.getElementById("merge-target-version").value);
+  if (!isUuid(sourceId) || !isUuid(targetId)) { errorEl.textContent = "error: both IDs must be valid UUIDs"; return; }
+  if (!window.confirm("Merge profile " + sourceId + " into " + targetId + "? This cannot be undone.")) return;
+  try {
+    await apiRequest("/api/v1/profiles/" + encodeURIComponent(sourceId) + "/merge", {
+      method: "POST",
+      body: { target_id: targetId, source_expected_version: sourceVersion, target_expected_version: targetVersion },
+    });
+    event.target.reset();
+    refreshProfiles();
+  } catch (error) {
+    errorEl.textContent = "error: " + error.message;
+  }
+});
+
+document.getElementById("export-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById("export-error");
+  errorEl.textContent = "";
+  const profileId = document.getElementById("export-profile-id").value.trim();
+  if (!isUuid(profileId)) { errorEl.textContent = "error: profile ID must be a valid UUID"; return; }
+  if (!window.confirm("Export profile " + profileId + "? The output contains encrypted biometric data; handle it as sensitive.")) return;
+  try {
+    const result = await apiRequest("/api/v1/profiles/export", { method: "POST", body: { profile_id: profileId } });
+    document.getElementById("export-output").value = safeText(result.blob_base64, "");
+  } catch (error) {
+    errorEl.textContent = "error: " + error.message;
+  }
+});
+
+document.getElementById("import-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById("import-error");
+  errorEl.textContent = "";
+  const blob = document.getElementById("import-input").value.trim();
+  if (!blob) { errorEl.textContent = "error: paste an exported blob first"; return; }
+  if (!window.confirm("Import this blob as a new profile?")) return;
+  try {
+    await apiRequest("/api/v1/profiles/import", { method: "POST", body: { blob_base64: blob } });
+    event.target.reset();
+    refreshProfiles();
+  } catch (error) {
+    errorEl.textContent = "error: " + error.message;
+  }
+});
+
+/* ---------------------------------------------------------------------
+ * System tab
+ * ------------------------------------------------------------------- */
+
+function definitionRow(term, value) {
+  return [el("dt", {}, [term]), el("dd", {}, [value])];
+}
+
+const refreshStatus = makeGuardedRefresh(
+  "status",
+  async (signal) => {
+    const [status, metrics] = await Promise.all([
+      apiRequest("/api/v1/status", { signal: signal }),
+      apiRequest("/api/v1/metrics", { signal: signal }).catch(() => null),
+    ]);
+    return { status: status, metrics: metrics };
+  },
+  (data) => {
+    document.getElementById("system-status").textContent = "";
+    const list = document.getElementById("status-list");
+    const children = [];
+    children.push(...definitionRow("Service state", safeText(data.status.service_state, "—")));
+    children.push(...definitionRow("Worker state", statusBadge(data.status.worker_state, WORKER_STATES)));
+    children.push(...definitionRow("Frames processed", String(safeNumber(data.status.frames_processed, 0))));
+    children.push(...definitionRow("Frames detected", String(safeNumber(data.status.frames_detected, 0))));
+    children.push(...definitionRow("Database enabled", data.status.database_enabled ? "yes" : "no"));
+    children.push(...definitionRow("Camera enabled", data.status.camera_enabled ? "yes" : "no"));
+    if (data.metrics) {
+      children.push(...definitionRow("Active profiles", String(safeNumber(data.metrics.active_profile_count, 0))));
+      children.push(...definitionRow("Candidates collecting", String(safeNumber(data.metrics.collecting_candidate_count, 0))));
+      children.push(...definitionRow("Candidates ready for review", String(safeNumber(data.metrics.ready_for_review_candidate_count, 0))));
+    }
+    list.replaceChildren(...children);
+  },
+  (error) => { document.getElementById("system-status").textContent = "error: " + error.message; }
+);
+
+const refreshCapabilities = makeGuardedRefresh(
+  "capabilities",
+  (signal) => apiRequest("/api/v1/system/capabilities", { signal: signal }),
+  (data) => {
+    const list = document.getElementById("capabilities-list");
+    const children = [];
+    children.push(...definitionRow("API authentication required", data.api_auth_required ? "yes" : "no"));
+    children.push(...definitionRow("Dashboard UI enabled", data.ui_enabled ? "yes" : "no"));
+    children.push(...definitionRow("Webcam preview enabled", data.webcam_preview_enabled ? "yes" : "no"));
+    children.push(...definitionRow("Camera enabled", data.camera_enabled ? "yes" : "no"));
+    children.push(...definitionRow("Database enabled", data.database_enabled ? "yes" : "no"));
+    children.push(...definitionRow("Enrollment enabled", data.enrollment_enabled ? "yes" : "no"));
+    children.push(...definitionRow("Settings backend", safeText(data.settings_backend, "—")));
+    children.push(...definitionRow("Worker state", statusBadge(data.worker_state, WORKER_STATES)));
+    list.replaceChildren(...children);
+  },
+  (error) => {
+    document.getElementById("capabilities-list").replaceChildren(el("dt", {}, ["error"]), el("dd", {}, [error.message]));
+  }
+);
+
+document.getElementById("pause-btn").addEventListener("click", async () => {
+  try { await apiRequest("/api/v1/system/pause", { method: "POST" }); refreshStatus(); refreshWebcamState(); }
+  catch (error) { document.getElementById("system-status").textContent = "error: " + error.message; }
+});
+document.getElementById("resume-btn").addEventListener("click", async () => {
+  try { await apiRequest("/api/v1/system/resume", { method: "POST" }); refreshStatus(); refreshWebcamState(); }
+  catch (error) { document.getElementById("system-status").textContent = "error: " + error.message; }
+});
+
+const refreshEvents = makeGuardedRefresh(
+  "events",
+  (signal) => apiRequest("/api/v1/events", { signal: signal }),
+  (data) => {
+    const tbody = document.querySelector("#events-table tbody");
+    const rows = (data.items || []).map((eventItem) => el("tr", {}, [
+      el("td", {}, [String(safeNumber(eventItem.sequence, 0))]),
+      el("td", {}, [safeText(eventItem.event_type, "—")]),
+      el("td", {}, [isUuid(eventItem.profile_id) ? eventItem.profile_id : "—"]),
+      el("td", {}, [safeText(eventItem.occurred_at, "—")]),
+    ]));
+    tbody.replaceChildren(...rows);
+  },
+  () => { /* database/events may be disabled; leave the table as-is */ }
+);
+
+/* ---------------------------------------------------------------------
+ * Startup
+ * ------------------------------------------------------------------- */
+
+refreshConnectionStatus();
+activateTab("webcam");
 </script>
 </body>
 </html>
