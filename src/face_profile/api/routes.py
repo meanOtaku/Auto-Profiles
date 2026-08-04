@@ -32,11 +32,15 @@ from face_profile.api.schemas import (
     CandidateListResponse,
     CandidateRejectRequest,
     CandidateResponse,
+    CapabilitiesResponse,
     DeviceSettingsResponse,
     EventListResponse,
     EventResponse,
+    FaceListResponse,
+    FaceResponse,
     HealthResponse,
     MetricsResponse,
+    ProfileCreateRequest,
     ProfileExportRequest,
     ProfileExportResponse,
     ProfileImportRequest,
@@ -50,6 +54,7 @@ from face_profile.api.schemas import (
 from face_profile.api.worker import WorkerState
 from face_profile.database.candidate_repository import (
     CandidateNotFoundError,
+    CandidateRepository,
     CandidateStateError,
 )
 from face_profile.database.models import CandidateStatus, ProfileStatus
@@ -188,12 +193,55 @@ def _require_database(request: Request) -> ProfileDatabase:
     return database
 
 
+def _require_candidates(request: Request) -> CandidateRepository:
+    """Return the candidate repository, or a controlled 503 instead of a ``None`` deref.
+
+    ``app.state.candidates`` is ``None`` whenever the database or enrollment
+    is disabled (see ``api/app.py``'s ``_build_candidate_repository``); the
+    candidate routes must fail closed with a machine-readable error rather
+    than raise ``AttributeError`` on ``None.list(...)``.
+    """
+
+    candidates: CandidateRepository | None = getattr(request.app.state, "candidates", None)
+    if candidates is None:
+        raise _domain_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "enrollment_disabled", "enrollment is disabled"
+        )
+    return candidates
+
+
+def _parse_profile_status(value: str | None) -> ProfileStatus | None:
+    if value is None:
+        return None
+    try:
+        return ProfileStatus(value)
+    except ValueError as error:
+        raise _domain_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "invalid_status_filter",
+            f"unknown profile status: {value}",
+        ) from error
+
+
+def _parse_candidate_status(value: str | None) -> CandidateStatus | None:
+    if value is None:
+        return None
+    try:
+        return CandidateStatus(value)
+    except ValueError as error:
+        raise _domain_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "invalid_status_filter",
+            f"unknown candidate status: {value}",
+        ) from error
+
+
 @router.get("/profiles", response_model=ProfileListResponse, dependencies=[Depends(require_auth)])
 async def list_profiles(
     request: Request, status_filter: str | None = None, limit: int = 50, offset: int = 0
 ) -> ProfileListResponse:
     database = _require_database(request)
-    parsed_status = ProfileStatus(status_filter) if status_filter else None
+    parsed_status = _parse_profile_status(status_filter)
     try:
         profiles = database.profiles.list(status=parsed_status, limit=limit, offset=offset)
     except ProfileRepositoryError as error:
@@ -201,6 +249,25 @@ async def list_profiles(
     return ProfileListResponse(
         items=[ProfileResponse.from_domain(p) for p in profiles], limit=limit, offset=offset
     )
+
+
+@router.post(
+    "/profiles",
+    response_model=ProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_auth)],
+)
+async def create_profile(request: Request, body: ProfileCreateRequest) -> ProfileResponse:
+    database = _require_database(request)
+    try:
+        profile = database.profiles.create(
+            display_name=body.display_name, is_owner=body.is_owner, priority=body.priority
+        )
+        database.events.record(event_type="ProfileCreated", profile_id=profile.id)
+        database.commit()
+    except ProfileRepositoryError as error:
+        raise _domain_error(status.HTTP_400_BAD_REQUEST, "invalid_request", str(error)) from error
+    return ProfileResponse.from_domain(profile)
 
 
 @router.get(
@@ -222,7 +289,7 @@ async def patch_profile(
     request: Request, profile_id: UUID, body: ProfilePatchRequest
 ) -> ProfileResponse:
     database = _require_database(request)
-    status_value = ProfileStatus(body.status) if body.status else None
+    status_value = _parse_profile_status(body.status)
     try:
         profile = database.profiles.update(
             profile_id,
@@ -330,11 +397,11 @@ async def import_profile(request: Request, body: ProfileImportRequest) -> Profil
 async def list_candidates(
     request: Request, status_filter: str | None = None, limit: int = 50, offset: int = 0
 ) -> CandidateListResponse:
-    _require_database(request)
-    parsed_status = CandidateStatus(status_filter) if status_filter else None
-    candidates = request.app.state.candidates.list(status=parsed_status, limit=limit, offset=offset)
+    candidates = _require_candidates(request)
+    parsed_status = _parse_candidate_status(status_filter)
+    result = candidates.list(status=parsed_status, limit=limit, offset=offset)
     return CandidateListResponse(
-        items=[CandidateResponse.from_domain(c) for c in candidates], limit=limit, offset=offset
+        items=[CandidateResponse.from_domain(c) for c in result], limit=limit, offset=offset
     )
 
 
@@ -344,9 +411,9 @@ async def list_candidates(
     dependencies=[Depends(require_auth)],
 )
 async def get_candidate(request: Request, candidate_id: UUID) -> CandidateResponse:
-    _require_database(request)
+    candidates = _require_candidates(request)
     try:
-        candidate = request.app.state.candidates.get(candidate_id)
+        candidate = candidates.get(candidate_id)
     except CandidateNotFoundError as error:
         raise _domain_error(status.HTTP_404_NOT_FOUND, "candidate_not_found", str(error)) from error
     return CandidateResponse.from_domain(candidate)
@@ -386,8 +453,9 @@ async def reject_candidate(
     request: Request, candidate_id: UUID, body: CandidateRejectRequest
 ) -> CandidateResponse:
     database = _require_database(request)
+    candidates = _require_candidates(request)
     try:
-        candidate = request.app.state.candidates.reject(
+        candidate = candidates.reject(
             candidate_id, reason=body.reason, reviewed_by=body.reviewed_by
         )
         database.commit()
@@ -402,8 +470,9 @@ async def reject_candidate(
 @router.delete("/candidates/{candidate_id}", dependencies=[Depends(require_auth)])
 async def delete_candidate(request: Request, candidate_id: UUID) -> dict[str, str]:
     database = _require_database(request)
+    candidates = _require_candidates(request)
     try:
-        request.app.state.candidates.delete(candidate_id)
+        candidates.delete(candidate_id)
         database.commit()
     except CandidateNotFoundError as error:
         raise _domain_error(status.HTTP_404_NOT_FOUND, "candidate_not_found", str(error)) from error
@@ -441,6 +510,27 @@ async def get_current_settings(request: Request) -> DeviceSettingsResponse:
     adapter = request.app.state.settings_adapter
     current = adapter.read_current()
     return DeviceSettingsResponse(volume=current.volume, brightness=current.brightness)
+
+
+@router.get(
+    "/profiles/{profile_id}/settings",
+    response_model=DeviceSettingsResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def get_profile_settings(request: Request, profile_id: UUID) -> DeviceSettingsResponse:
+    database = _require_database(request)
+    try:
+        database.profiles.get(profile_id)
+    except ProfileNotFoundError as error:
+        raise _domain_error(status.HTTP_404_NOT_FOUND, "profile_not_found", str(error)) from error
+    saved = database.settings.get(profile_id)
+    if saved is None:
+        raise _domain_error(
+            status.HTTP_404_NOT_FOUND,
+            "settings_not_found",
+            "no settings have been saved for this profile",
+        )
+    return DeviceSettingsResponse(volume=saved.volume, brightness=saved.brightness)
 
 
 @router.put(
@@ -481,6 +571,53 @@ async def resume_system(request: Request) -> dict[str, str]:
     if worker is not None:
         worker.resume()
     return {"status": "resumed"}
+
+
+@router.get("/faces", response_model=FaceListResponse, dependencies=[Depends(require_auth)])
+async def list_faces(request: Request) -> FaceListResponse:
+    """Return bounded, privacy-safe metadata for every currently-tracked face.
+
+    Never images, crops, or embeddings -- see ``api/worker.py``'s
+    ``FaceSnapshot``. A disabled or not-yet-started worker is reported as an
+    empty list rather than an error, matching ``/status``'s treatment of a
+    missing worker.
+    """
+
+    worker = getattr(request.app.state, "worker", None)
+    if worker is None:
+        return FaceListResponse(items=[])
+    return FaceListResponse(
+        items=[FaceResponse.from_domain(face) for face in worker.latest_faces()]
+    )
+
+
+@router.get(
+    "/system/capabilities",
+    response_model=CapabilitiesResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def get_capabilities(request: Request) -> CapabilitiesResponse:
+    """Return a safe capability/privacy summary: booleans and statuses only.
+
+    Distinct from ``/status`` (worker throughput/state) and ``/settings/current``
+    (live device values) -- this answers "what is this deployment allowed and
+    configured to do" for a UI to render controls conditionally.
+    """
+
+    state = request.app.state
+    config = state.config
+    worker = getattr(state, "worker", None)
+    worker_health = worker.health() if worker is not None else None
+    return CapabilitiesResponse(
+        api_auth_required=config.api.auth_token is not None,
+        ui_enabled=config.ui.enabled,
+        webcam_preview_enabled=config.ui.webcam_preview_enabled,
+        camera_enabled=config.camera.enabled,
+        database_enabled=state.database is not None,
+        enrollment_enabled=config.enrollment.enabled,
+        settings_backend=config.settings.backend,
+        worker_state=worker_health.state.value if worker_health else WorkerState.STOPPED.value,
+    )
 
 
 @router.websocket("/events/live")

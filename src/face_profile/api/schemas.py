@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from face_profile.api.worker import FaceSnapshot
 from face_profile.database.models import Candidate, Profile
 
 
@@ -55,6 +56,12 @@ class ProfileListResponse(ApiModel):
     items: list[ProfileResponse]
     limit: int
     offset: int
+
+
+class ProfileCreateRequest(ApiModel):
+    display_name: str = Field(min_length=1, max_length=200)
+    is_owner: bool = False
+    priority: int = Field(default=0, ge=0, le=1000)
 
 
 class ProfilePatchRequest(ApiModel):
@@ -189,3 +196,44 @@ class MetricsResponse(ApiModel):
 class ErrorResponse(ApiModel):
     error_code: str
     message: str
+
+
+class FaceResponse(ApiModel):
+    """Privacy-safe current-face metadata: never images, crops, or embeddings."""
+
+    track_id: int
+    state: str
+    profile_id: UUID | None
+    candidate_id: UUID | None
+    display_label: str | None
+    quality_score: float | None
+    last_observed_at: str
+
+    @classmethod
+    def from_domain(cls, face: FaceSnapshot) -> FaceResponse:
+        return cls(
+            track_id=face.track_id,
+            state=face.state.value,
+            profile_id=face.profile_id,
+            candidate_id=face.candidate_id,
+            display_label=face.display_label,
+            quality_score=face.quality_score,
+            last_observed_at=face.last_observed_at.isoformat(),
+        )
+
+
+class FaceListResponse(ApiModel):
+    items: list[FaceResponse]
+
+
+class CapabilitiesResponse(ApiModel):
+    """Safe booleans/statuses only -- no secrets, no biometric configuration values."""
+
+    api_auth_required: bool
+    ui_enabled: bool
+    webcam_preview_enabled: bool
+    camera_enabled: bool
+    database_enabled: bool
+    enrollment_enabled: bool
+    settings_backend: str
+    worker_state: str

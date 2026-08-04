@@ -74,6 +74,35 @@ class _PreviewLabel:
     category: PreviewCategory
 
 
+@dataclass(frozen=True, slots=True)
+class _FaceObservation:
+    """One track's current recognition state, independent of preview drawing."""
+
+    category: PreviewCategory
+    profile_id: UUID | None
+    candidate_id: UUID | None
+    display_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class FaceSnapshot:
+    """Privacy-safe, bounded metadata for one currently-tracked face.
+
+    Exposed through ``GET /api/v1/faces``. Deliberately excludes images,
+    crops, embeddings, and any field beyond track/profile/candidate
+    identifiers, a display label, quality, and timestamps -- see
+    ARCHITECTURE.md §13 and CODING_STANDARDS.md §18.
+    """
+
+    track_id: int
+    state: PreviewCategory
+    profile_id: UUID | None
+    candidate_id: UUID | None
+    display_label: str | None
+    quality_score: float | None
+    last_observed_at: datetime
+
+
 def _sanitize_preview_text(text: str) -> str:
     """Bound and clean text before it is drawn on the preview overlay.
 
@@ -90,6 +119,31 @@ def _sanitize_preview_text(text: str) -> str:
     if len(collapsed) > _PREVIEW_LABEL_MAX_LENGTH:
         collapsed = collapsed[: _PREVIEW_LABEL_MAX_LENGTH - 1] + "…"
     return collapsed or "Unknown"
+
+
+_UNKNOWN_OBSERVATION = _FaceObservation(PreviewCategory.UNKNOWN, None, None, None)
+
+
+def _preview_label_from_observation(
+    box: BoundingBox, observation: _FaceObservation
+) -> _PreviewLabel:
+    """Render one track's observation into a drawable preview box/label."""
+
+    if observation.category is PreviewCategory.KNOWN:
+        text = _sanitize_preview_text(f"{observation.display_name} ({observation.profile_id})")
+        return _PreviewLabel(box, text, PreviewCategory.KNOWN)
+    if observation.category is PreviewCategory.LIVENESS_FAILED:
+        base = (
+            f"{observation.display_name} ({observation.candidate_id})"
+            if observation.candidate_id is not None
+            else "Unknown"
+        )
+        text = _sanitize_preview_text(f"{base} - liveness failed")
+        return _PreviewLabel(box, text, PreviewCategory.LIVENESS_FAILED)
+    if observation.candidate_id is not None:
+        text = _sanitize_preview_text(f"{observation.display_name} ({observation.candidate_id})")
+        return _PreviewLabel(box, text, PreviewCategory.UNKNOWN)
+    return _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
 
 
 def _draw_preview_label(image: ImageArray, label: _PreviewLabel, *, scale: float) -> None:
@@ -207,6 +261,7 @@ class PipelineWorker:
         self._lock = threading.Lock()
         self._preview_last_generated_monotonic = 0.0
         self._latest_preview_jpeg: bytes | None = None
+        self._latest_faces: dict[int, FaceSnapshot] = {}
 
     def start(self) -> None:
         """Open the frame source and start the background thread."""
@@ -221,10 +276,19 @@ class PipelineWorker:
         self._thread.start()
 
     def pause(self) -> None:
+        """Pause processing: the frame source stays open, but no new frames are drawn.
+
+        Privacy control, not a camera-off control (HERMES.md's UI rule):
+        clears the cached preview snapshot immediately so
+        ``GET /api/v1/preview/latest.jpg`` stops serving a stale frame while
+        paused, rather than only stopping generation of new ones.
+        """
+
         self._pause_event.set()
         with self._lock:
             if self._state is WorkerState.RUNNING:
                 self._state = WorkerState.PAUSED
+            self._latest_preview_jpeg = None
 
     def resume(self) -> None:
         self._pause_event.clear()
@@ -247,6 +311,7 @@ class PipelineWorker:
                 # A stopped worker produces no new frames; drop the stale
                 # snapshot rather than keep serving it indefinitely.
                 self._latest_preview_jpeg = None
+                self._latest_faces = {}
 
     def health(self) -> WorkerHealth:
         with self._lock:
@@ -268,6 +333,17 @@ class PipelineWorker:
 
         with self._lock:
             return self._latest_preview_jpeg
+
+    def latest_faces(self) -> tuple[FaceSnapshot, ...]:
+        """Return a bounded, privacy-safe snapshot of every currently-tracked face.
+
+        Backs ``GET /api/v1/faces``. Entries are removed as soon as their
+        track ends (see ``_process_one_frame``), so this never grows
+        unbounded and never reports a face that is no longer present.
+        """
+
+        with self._lock:
+            return tuple(self._latest_faces.values())
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -326,6 +402,8 @@ class PipelineWorker:
                 self._recognizer.track_ended(ended_track_id)
             if self._candidate_manager is not None:
                 self._candidate_manager.track_ended(ended_track_id)
+            with self._lock:
+                self._latest_faces.pop(ended_track_id, None)
         self._known_track_ids = current_track_ids
 
         presence_candidates: list[PresenceCandidate] = []
@@ -352,13 +430,19 @@ class PipelineWorker:
         self, tracked: TrackedFace, *, frame: Frame, now: datetime
     ) -> tuple[PresenceCandidate | None, _PreviewLabel]:
         box = tracked.detection.bounding_box
-        unknown_label = _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
+        track_id = tracked.track_id
         if self._quality_evaluator is None or self._aligner is None or self._embedder is None:
-            return None, unknown_label
+            self._record_face(
+                track_id, observation=_UNKNOWN_OBSERVATION, quality_score=None, now=now
+            )
+            return None, _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
         detection = tracked.detection
         quality = self._quality_evaluator.evaluate(frame, detection)
         if not quality.accepted:
-            return None, unknown_label
+            self._record_face(
+                track_id, observation=_UNKNOWN_OBSERVATION, quality_score=quality.score, now=now
+            )
+            return None, _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
         aligned = self._aligner.align(frame, detection)
         embedding = self._embedder.generate(aligned)
         liveness_passed = True
@@ -366,13 +450,16 @@ class PipelineWorker:
             liveness_passed = self._passive_liveness_evaluator.evaluate(aligned).passed
 
         if self._recognizer is None:
-            return None, unknown_label
-        decision = self._recognizer.recognize(tracked.track_id, embedding, observed_at=now)
+            self._record_face(
+                track_id, observation=_UNKNOWN_OBSERVATION, quality_score=quality.score, now=now
+            )
+            return None, _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
+        decision = self._recognizer.recognize(track_id, embedding, observed_at=now)
 
         candidate: Candidate | None = None
         if decision.state is RecognitionState.UNKNOWN and self._candidate_manager is not None:
             candidate = self._candidate_manager.observe_unknown(
-                tracked.track_id,
+                track_id,
                 embedding,
                 detection.landmarks,
                 quality_score=quality.score,
@@ -380,9 +467,11 @@ class PipelineWorker:
                 liveness_passed=liveness_passed,
             )
 
-        preview_label = self._build_preview_label(
-            box, decision=decision, candidate=candidate, liveness_passed=liveness_passed
+        observation = self._observe_face(
+            decision=decision, candidate=candidate, liveness_passed=liveness_passed
         )
+        self._record_face(track_id, observation=observation, quality_score=quality.score, now=now)
+        preview_label = _preview_label_from_observation(box, observation)
 
         if decision.state is not RecognitionState.CONFIRMED_MATCH or decision.profile_id is None:
             return None, preview_label
@@ -401,24 +490,23 @@ class PipelineWorker:
         )
         return presence, preview_label
 
-    def _build_preview_label(
+    def _observe_face(
         self,
-        box: BoundingBox,
         *,
         decision: RecognitionDecision,
         candidate: Candidate | None,
         liveness_passed: bool,
-    ) -> _PreviewLabel:
-        """Choose the drawn label/color for one track's current observation.
+    ) -> _FaceObservation:
+        """Determine one track's current recognition state, independent of drawing.
 
         Confirmed recognition always wins (a stable, temporally-confirmed
         identity). Next, a candidate this same call just promoted (M8
         automatic promotion) is shown with its brand-new permanent profile
         UUID immediately, before the separate M7 temporal-confirmation cache
         would otherwise catch up on a later frame. A liveness failure on an
-        unconfirmed track is shown in its own color. Anything else --
+        unconfirmed track is reported in its own state. Anything else --
         including AMBIGUOUS/POSSIBLE_MATCH observations that have not yet
-        accumulated a candidate -- stays privacy-safe "Unknown", per
+        accumulated a candidate -- stays privacy-safe "unknown", per
         HERMES.md's unknown-person policy: no identity is ever implied
         before it is actually established.
         """
@@ -426,8 +514,9 @@ class PipelineWorker:
         if decision.state is RecognitionState.CONFIRMED_MATCH and decision.profile_id is not None:
             display_name = self._lookup_profile_display_name(decision.profile_id)
             if display_name is not None:
-                text = _sanitize_preview_text(f"{display_name} ({decision.profile_id})")
-                return _PreviewLabel(box, text, PreviewCategory.KNOWN)
+                return _FaceObservation(
+                    PreviewCategory.KNOWN, decision.profile_id, None, display_name
+                )
         if (
             candidate is not None
             and candidate.status is CandidateStatus.PROMOTED
@@ -437,20 +526,41 @@ class PipelineWorker:
                 self._lookup_profile_display_name(candidate.promoted_profile_id)
                 or candidate.temporary_name
             )
-            text = _sanitize_preview_text(f"{display_name} ({candidate.promoted_profile_id})")
-            return _PreviewLabel(box, text, PreviewCategory.KNOWN)
-        if not liveness_passed:
-            base = (
-                f"{candidate.temporary_name} ({candidate.id})"
-                if candidate is not None
-                else "Unknown"
+            return _FaceObservation(
+                PreviewCategory.KNOWN, candidate.promoted_profile_id, candidate.id, display_name
             )
-            text = _sanitize_preview_text(f"{base} - liveness failed")
-            return _PreviewLabel(box, text, PreviewCategory.LIVENESS_FAILED)
+        if not liveness_passed:
+            return _FaceObservation(
+                PreviewCategory.LIVENESS_FAILED,
+                None,
+                candidate.id if candidate is not None else None,
+                candidate.temporary_name if candidate is not None else None,
+            )
         if candidate is not None:
-            text = _sanitize_preview_text(f"{candidate.temporary_name} ({candidate.id})")
-            return _PreviewLabel(box, text, PreviewCategory.UNKNOWN)
-        return _PreviewLabel(box, "Unknown", PreviewCategory.UNKNOWN)
+            return _FaceObservation(
+                PreviewCategory.UNKNOWN, None, candidate.id, candidate.temporary_name
+            )
+        return _UNKNOWN_OBSERVATION
+
+    def _record_face(
+        self,
+        track_id: int,
+        *,
+        observation: _FaceObservation,
+        quality_score: float | None,
+        now: datetime,
+    ) -> None:
+        snapshot = FaceSnapshot(
+            track_id=track_id,
+            state=observation.category,
+            profile_id=observation.profile_id,
+            candidate_id=observation.candidate_id,
+            display_label=observation.display_name,
+            quality_score=quality_score,
+            last_observed_at=now,
+        )
+        with self._lock:
+            self._latest_faces[track_id] = snapshot
 
     def _lookup_profile_priority(self, profile_id: UUID) -> int | None:
         if self._profiles is None:
