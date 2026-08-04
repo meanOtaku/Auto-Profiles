@@ -1,6 +1,7 @@
 # M17 Windows compatibility gate.
 #
-# Manually triggered only (workflow_dispatch) -- this is a static-verification
+# Manually triggered once this workflow exists on the default branch, or triggered
+# on alpha by changing only .github/windows-compatibility-trigger. This is a static-verification
 # and packaging gate for the native Windows operator surface (run.ps1,
 # run-continuous.ps1, scripts/provision-models.ps1, the Windows settings
 # adapter), not part of the required push/PR gate in ci.yml. It never runs
@@ -13,6 +14,10 @@
 name: windows-compatibility
 
 on:
+  push:
+    branches: [alpha]
+    paths:
+      - .github/windows-compatibility-trigger
   workflow_dispatch: {}
 
 permissions:

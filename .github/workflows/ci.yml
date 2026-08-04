@@ -3,6 +3,8 @@ name: ci
 on:
   push:
     branches: [main, alpha]
+    paths-ignore:
+      - .github/windows-compatibility-trigger
   pull_request:
 
 permissions:
