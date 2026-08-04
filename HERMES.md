@@ -664,9 +664,10 @@ M17 extends the existing factories rather than replacing Linux behavior:
   `config/windows-full.yaml`; `config/windows-safe.yaml` is the fully
   hardware-free import/config/CLI target;
 - `run-continuous.ps1` is a foreground restart loop, not a Windows Service;
-- M17 tests were explicitly not created or run by owner direction. Evidence is
-  limited to static/build checks until the manual Windows workflow and hardware
-  checks in `docs/reports/M17.md` are recorded.
+- M17 tests were explicitly not created or run by owner direction. Windows
+  workflow run 30884122482 verifies the Python 3.11/3.12 static/build,
+  clean-wheel, and hardware-disabled CLI path; hardware checks remain scoped in
+  `docs/reports/M17.md`.
 
 ## Standard Milestone Prompt
 

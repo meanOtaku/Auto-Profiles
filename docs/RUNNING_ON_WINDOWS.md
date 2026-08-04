@@ -17,12 +17,11 @@ possible without that hardware -- reading the source (`settings/windows.py`,
 `_win_security.py`, `platform_security.py`, `camera/__init__.py`,
 `camera/diagnostics.py`, `diagnostics/preflight.py`), running Ruff/mypy against it,
 and exercising the cross-platform parts of the CLI/config loader for real in this
-(Linux) sandbox -- not by executing anything on a real Windows host. Section 9 below
-and `docs/reports/M17.md` list exactly what still needs a real Windows machine, and
-the `windows-compatibility` GitHub Actions workflow (`workflow_dispatch`-only, not
-part of the required push/PR gate) is the first piece of *real* Windows-host
-evidence this project will have once it is actually run -- it has not been run yet
-as of this guide's writing.
+(Linux) sandbox and through Windows workflow run 30884122482. That Windows runner
+verified locked installation, static checks, package build, clean-wheel install,
+and the hardware-disabled CLI path for Python 3.11/3.12. Section 9 below and
+`docs/reports/M17.md` list exactly what still needs an operator-managed Windows
+machine and real hardware.
 
 ## 1. Prerequisites
 
@@ -224,14 +223,13 @@ And these, once a camera/audio endpoint/display is available:
 ```
 
 The `.github/workflows/windows-compatibility.yml` GitHub Actions workflow
-(`workflow_dispatch`-only, `windows-latest`, Python 3.11/3.12 matrix) runs the
+(`windows-latest`, Python 3.11/3.12 matrix) runs the
 first block above on a real Windows GitHub-hosted runner: locked dependency sync,
 `compileall`, Ruff, strict mypy, `uv build`, installing the built wheel into a
 clean `uv` environment, and the hardware-disabled `check` against
 `config/windows-safe.yaml`. It never runs `pytest` or any test runner, and it is
-not part of the required push/PR gate (`ci.yml`) -- it must be triggered manually,
-and as of this guide's writing it has not yet been run for real (see
-`docs/reports/M17.md`).
+not part of the required push/PR gate (`ci.yml`). Run 30884122482 passed both
+matrix entries; see `docs/reports/M17.md` for the URL and exact evidence.
 
 ## 9. What this guide does not and cannot claim
 
@@ -239,8 +237,8 @@ Consistent with `docs/RUNNING_ON_UBUNTU.md` §10, `docs/RUNNING_ON_JETSON.md` §
 and every `docs/reports/M*.md`: no milestone in this repository has been verified
 against real target hardware by the owner, and this guide does not change that.
 Specifically **not** performed in the environment that produced this guide and
-the M17 changes (no Windows machine, camera, audio endpoint, or brightness-
-capable display were available):
+the M17 changes (no operator-managed Windows machine, camera, audio endpoint, or
+brightness-capable display were available):
 
 - Installing or running anything on an actual Windows 10 or 11 machine, in any
   PowerShell version.

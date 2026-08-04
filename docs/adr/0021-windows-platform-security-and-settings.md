@@ -122,23 +122,23 @@ boot, and makes no guarantee of surviving a terminal close, logoff, or reboot --
 `docs/RUNNING_ON_WINDOWS.md` §6 states this plainly rather than implying
 service-like durability the script does not provide.
 
-**The `windows-compatibility` GitHub Actions workflow is `workflow_dispatch`-only
-and never runs `pytest`.** It is a static-verification and packaging gate
+**The isolated `windows-compatibility` GitHub Actions workflow never runs
+`pytest`.** It is a static-verification and packaging gate
 (dependency sync, `compileall`, Ruff, strict mypy, `uv build`, installing the
 built wheel into a clean environment, then the hardware-disabled
 `config/windows-safe.yaml` check) on a real `windows-latest` GitHub-hosted
-runner -- the first source of *real* Windows-host evidence this project will have,
-once actually triggered. It is deliberately kept out of the required push/PR gate
-(`ci.yml`) since it has not yet been run even once and this project's convention
-(`CODING_STANDARDS.md`) is not to claim a gate passes before it has actually been
-exercised.
+runner. On `alpha`, a dedicated marker-only push triggers it while `ci.yml`
+ignores only that marker path. Run 30884122482 passed both Python 3.11 and 3.12
+matrix entries. This project's convention (`CODING_STANDARDS.md`) is not to
+claim any broader hardware behavior from that safe-path evidence.
 
 ## Consequences
 
 - A Windows operator now has a native source path intended to install, provision
   models, run a hardware-free check, and launch the full pipeline without WSL.
-  The path is not called runtime-verified until the Windows workflow and hardware
-  checks recorded in the M17 report pass.
+  Packaging and the hardware-disabled CLI path are Windows-runner verified;
+  hardware behavior remains unverified until the checks recorded in the M17
+  report pass.
 - `run.ps1`'s default-config asymmetry with `run.sh` is a one-time documented
   exception to this project's "disabled by default" convention, justified above;
   it should not be read as license to default other future launchers to a
