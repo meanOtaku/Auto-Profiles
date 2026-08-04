@@ -11,6 +11,7 @@ and process identity, safe to call even when no camera is present.
 import os
 import platform
 from dataclasses import dataclass
+from importlib import import_module
 
 _VIDEO_GROUP_NAME = "video"
 
@@ -33,15 +34,18 @@ def _user_in_video_group() -> bool | None:
     """
 
     try:
-        import grp
-    except ImportError:
+        getgrnam = vars(import_module("grp"))["getgrnam"]
+    except (ImportError, KeyError):
         return None
     try:
-        video_group = grp.getgrnam(_VIDEO_GROUP_NAME)
+        video_group = getgrnam(_VIDEO_GROUP_NAME)
     except KeyError:
         return None
+    getgroups = vars(os).get("getgroups")
+    if getgroups is None:
+        return None
     try:
-        group_ids = os.getgroups()
+        group_ids = getgroups()
     except OSError:
         return None
     return video_group.gr_gid in group_ids

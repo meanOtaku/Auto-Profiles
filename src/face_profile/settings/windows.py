@@ -40,6 +40,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Protocol
 
 from face_profile.settings import (
@@ -144,8 +145,8 @@ class PycawEndpointVolumeAccessor:
         # never installed on Linux/macOS, so this module must stay
         # importable there -- only actually calling into this accessor
         # requires them to be present.
-        import comtypes  # type: ignore[import-not-found]
-        from pycaw.pycaw import AudioUtilities  # type: ignore[import-not-found]
+        comtypes = import_module("comtypes")
+        audio_utilities = vars(import_module("pycaw.pycaw"))["AudioUtilities"]
 
         initialized_here = False
         try:
@@ -157,7 +158,7 @@ class PycawEndpointVolumeAccessor:
                 # means another component owns that apartment; never uninitialize it.
                 if not _exception_has_code(error, _RPC_E_CHANGED_MODE):
                     raise
-            speakers = AudioUtilities.GetSpeakers()
+            speakers = audio_utilities.GetSpeakers()
             yield speakers.EndpointVolume
         finally:
             if initialized_here:
