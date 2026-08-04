@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import platform
+
 from face_profile.config import PreferenceLearningConfig, SettingsConfig
 from face_profile.database.repository import ProfileDatabase
 from face_profile.settings import DeviceSettings, MockSettingsAdapter, SettingsAdapter
@@ -10,10 +12,39 @@ from face_profile.settings.last_used_service import LastUsedPreferenceService
 from face_profile.settings.linux import LinuxSettingsAdapter
 from face_profile.settings.preference_learning import PreferenceLearner
 from face_profile.settings.rate_limit import RateLimitedSettingsAdapter
+from face_profile.settings.windows import WindowsSettingsAdapter
+
+
+class SettingsPlatformError(RuntimeError):
+    """Raised when a real settings backend is selected on the wrong OS.
+
+    Fail-closed by construction, not merely by convention: a config file
+    that selects ``linux`` cannot even be evaluated for whether it *would*
+    work on the host running it, because the adapter it selects assumes
+    Linux-only tools (``amixer``, sysfs backlight) exist. Refusing to
+    construct the adapter at all -- rather than constructing it and
+    letting every call fail with a confusing tool-not-found error -- keeps
+    the failure obviously attributable to the config/host mismatch.
+    """
+
+
+def _guard_backend_platform(backend: str, *, platform_name: str) -> None:
+    if backend == "linux" and platform_name != "Linux":
+        raise SettingsPlatformError(
+            f"settings.backend: linux was selected, but this host reports "
+            f"platform.system() == {platform_name!r}; the Linux adapter "
+            "(amixer + sysfs backlight) is not applicable here"
+        )
+    if backend == "windows" and platform_name != "Windows":
+        raise SettingsPlatformError(
+            f"settings.backend: windows was selected, but this host reports "
+            f"platform.system() == {platform_name!r}; the Windows adapter "
+            "(pycaw + WMI brightness) is not applicable here"
+        )
 
 
 def create_settings_adapter(
-    config: SettingsConfig, *, initial: DeviceSettings
+    config: SettingsConfig, *, initial: DeviceSettings, platform_name: str | None = None
 ) -> RateLimitedSettingsAdapter:
     """Build the configured adapter, always rate-limited.
 
@@ -24,10 +55,19 @@ def create_settings_adapter(
     gated by explicit configuration. The return type is the concrete
     ``RateLimitedSettingsAdapter`` (not just ``SettingsAdapter``) because
     M11's preference learner needs its ``recent_self_applications()``.
+
+    ``platform_name`` defaults to the real ``platform.system()`` and only
+    exists as a parameter so tests can exercise both branches of the M17
+    fail-closed guard (below) without needing to actually run on both
+    operating systems.
     """
 
+    resolved_platform = platform_name if platform_name is not None else platform.system()
+    _guard_backend_platform(config.backend, platform_name=resolved_platform)
     if config.backend == "mock":
         base: SettingsAdapter = MockSettingsAdapter(initial)
+    elif config.backend == "windows":
+        base = WindowsSettingsAdapter()
     else:
         base = LinuxSettingsAdapter()
     return RateLimitedSettingsAdapter(

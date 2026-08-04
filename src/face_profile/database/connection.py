@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
-import stat
 from pathlib import Path
 
 from face_profile.database.schema import apply_migrations
+from face_profile.platform_security import (
+    SecurityBoundaryError,
+    ensure_private_directory,
+    harden_new_file,
+    verify_private_file,
+)
 
 
 class DatabaseUnavailableError(RuntimeError):
@@ -30,6 +35,13 @@ def open_database(path: Path) -> sqlite3.Connection:
     rather than Python's sqlite3 module trusting single-thread usage.
     Dedicated per-thread connections or a queued writer are a documented
     follow-up for M15 rather than assumed safe by default here.
+
+    M17 hardens the parent directory (and, on Windows, the database file
+    itself) through ``face_profile.platform_security`` instead of raw
+    ``mkdir(mode=...)``/``chmod``, which are POSIX-only in effect: on
+    Windows the inheritable protected DACL applied to the parent directory
+    is also what keeps the ``-wal``/``-shm`` sidecar files SQLite creates
+    private, since this project never chmod's those directly.
     """
 
     if sqlite3.threadsafety != 3:
@@ -38,18 +50,25 @@ def open_database(path: Path) -> sqlite3.Connection:
             "safe cross-thread access cannot be guaranteed"
         )
     try:
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    except OSError as error:
+        ensure_private_directory(path.parent)
+    except SecurityBoundaryError as error:
         raise DatabaseUnavailableError("database directory unavailable") from error
     is_new = not path.exists()
+    if not is_new:
+        try:
+            verify_private_file(path)
+        except SecurityBoundaryError as error:
+            raise DatabaseUnavailableError("database file permissions are unsafe") from error
     try:
         connection = sqlite3.connect(str(path), check_same_thread=False)
     except sqlite3.Error as error:
         raise DatabaseUnavailableError("database file unavailable") from error
-    if is_new:
-        _harden_permissions(path)
-    else:
-        _verify_permissions(path)
+    try:
+        if is_new:
+            harden_new_file(path)
+    except SecurityBoundaryError as error:
+        connection.close()
+        raise DatabaseUnavailableError("database file permissions are unsafe") from error
     try:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA foreign_keys=ON")
@@ -59,19 +78,3 @@ def open_database(path: Path) -> sqlite3.Connection:
         connection.close()
         raise DatabaseUnavailableError("database initialization failed") from error
     return connection
-
-
-def _harden_permissions(path: Path) -> None:
-    try:
-        path.chmod(0o600)
-    except OSError as error:
-        raise DatabaseUnavailableError("database file permissions could not be set") from error
-
-
-def _verify_permissions(path: Path) -> None:
-    try:
-        mode = path.stat().st_mode
-    except OSError as error:
-        raise DatabaseUnavailableError("database file unavailable") from error
-    if stat.S_IMODE(mode) & 0o077:
-        raise DatabaseUnavailableError("database file permissions are too permissive")

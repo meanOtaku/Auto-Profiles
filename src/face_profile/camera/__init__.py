@@ -15,6 +15,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from face_profile.camera.diagnostics import diagnose_webcam
+from face_profile.platform_security import (
+    SecurityBoundaryError,
+    ensure_private_directory,
+    harden_new_file,
+    posix_open_flags,
+    reject_unsafe_target,
+)
 
 ImageArray: TypeAlias = NDArray[np.uint8]
 
@@ -62,7 +69,15 @@ class FrameWriteError(OSError):
 
 
 def save_frame(frame: Frame, path: Path) -> None:
-    """Save a frame using the format selected by the output suffix."""
+    """Save a frame using the format selected by the output suffix.
+
+    Debug/detection overlays are sensitive derived images (ARCHITECTURE.md
+    §13), so this is the one private, no-follow frame-output boundary
+    every debug-output caller must use. M17 extends the owner-only
+    protection to Windows (a protected DACL, since ``os.fchmod``/``chmod``
+    mode bits do nothing there) via ``face_profile.platform_security``,
+    on top of the pre-existing POSIX ``O_NOFOLLOW``/``0600`` enforcement.
+    """
 
     try:
         encoded, payload = cv2.imencode(path.suffix, frame.image)
@@ -71,11 +86,22 @@ def save_frame(frame: Frame, path: Path) -> None:
     if not encoded:
         raise FrameWriteError("failed to save frame")
 
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        ensure_private_directory(path.parent)
+        reject_unsafe_target(path)
+        if path.exists():
+            # Tighten an existing output before truncating it, so its old
+            # DACL/mode cannot expose newly written frame bytes even briefly.
+            harden_new_file(path)
+    except SecurityBoundaryError as error:
+        raise FrameWriteError("failed to save frame") from error
+
+    flags = posix_open_flags(truncate=True, exclusive=False)
     descriptor: int | None = None
     try:
         descriptor = os.open(path, flags, 0o600)
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as output:
             descriptor = None
             output.write(payload.tobytes())
@@ -84,6 +110,11 @@ def save_frame(frame: Frame, path: Path) -> None:
     finally:
         if descriptor is not None:
             os.close(descriptor)
+
+    try:
+        harden_new_file(path)
+    except SecurityBoundaryError as error:
+        raise FrameWriteError("failed to save frame") from error
 
 
 class EndOfFrames(EOFError):
@@ -348,14 +379,26 @@ class WebcamFrameSource:
 
     @staticmethod
     def _default_capture_factory(device_index: int) -> CaptureDevice:
-        if platform.system() == "Linux":
-            # Ask for V4L2 explicitly rather than OpenCV's default backend
-            # auto-detection: on embedded/aarch64 Linux (e.g. Jetson JetPack
-            # Ubuntu), a USB UVC webcam is a V4L2 device and pinning the
-            # backend avoids ambiguity if other video I/O backends are
-            # present but not applicable (e.g. GStreamer pipelines meant for
-            # CSI cameras, not USB webcams).
+        # Pin an explicit backend per platform rather than trusting OpenCV's
+        # default auto-detection, so the same device_index deterministically
+        # addresses the same backend across runs instead of silently
+        # cascading to whichever backend OpenCV happens to probe first.
+        system = platform.system()
+        if system == "Linux":
+            # On embedded/aarch64 Linux (e.g. Jetson JetPack Ubuntu), a USB
+            # UVC webcam is a V4L2 device and pinning the backend avoids
+            # ambiguity if other video I/O backends are present but not
+            # applicable (e.g. GStreamer pipelines meant for CSI cameras,
+            # not USB webcams).
             return cast(CaptureDevice, cv2.VideoCapture(device_index, cv2.CAP_V4L2))
+        if system == "Windows":
+            # DirectShow is the deterministic, broadly-compatible OpenCV
+            # backend for USB UVC webcams on Windows 10/11 (M17). Media
+            # Foundation (CAP_MSMF) is OpenCV's newer alternative but has
+            # documented compatibility gaps with some UVC drivers; DirectShow
+            # is the one this project pins and documents (see
+            # docs/RUNNING_ON_WINDOWS.md), not left to auto-detection.
+            return cast(CaptureDevice, cv2.VideoCapture(device_index, cv2.CAP_DSHOW))
         return cast(CaptureDevice, cv2.VideoCapture(device_index))
 
     def _connect(self) -> None:

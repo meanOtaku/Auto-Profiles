@@ -1,13 +1,20 @@
 """Non-mutating deployment preflight: models, camera path, settings capabilities.
 
 Every check here only ever reads: model bytes are hashed but never loaded
-into an inference engine, the camera device is only ``stat``-ed and
-permission-checked (never opened), and settings capability detection goes
-through the same ``LinuxSettingsAdapter.capabilities()`` the real adapter
-uses in production -- itself documented as read-only (see
-``settings/linux.py``'s ``SysfsBacklightAccessor.is_writable`` docstring
-and ``LinuxSettingsAdapter._volume_capability``). Nothing here changes
+into an inference engine, settings capability detection goes through the
+same ``capabilities()`` the real adapter uses in production -- itself
+documented as read-only (see ``settings/linux.py``'s
+``SysfsBacklightAccessor.is_writable`` docstring and
+``LinuxSettingsAdapter._volume_capability``) -- and nothing here changes
 volume, brightness, or any other host state.
+
+The camera check is platform-aware (M17). On Linux, the configured
+``/dev/videoN`` device is only ``stat``-ed and permission-checked, never
+opened. On Windows there is no stable, enumerable device-path equivalent
+to stat -- this check does not invent one, and does not open the camera
+either, so Windows camera validation is explicitly reported as deferred to
+runtime capture (``cv2.VideoCapture(device_index, cv2.CAP_DSHOW)``) rather
+than silently skipped or falsely claimed as verified.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import platform
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -24,6 +32,7 @@ from typing import Protocol
 from face_profile.config import AppConfig
 from face_profile.settings import AdapterCapabilities, CapabilityStatus
 from face_profile.settings.linux import LinuxSettingsAdapter
+from face_profile.settings.windows import WindowsSettingsAdapter
 
 
 class CheckStatus(StrEnum):
@@ -64,6 +73,8 @@ class CapabilitiesProvider(Protocol):
 
 VideoDevicePath = Callable[[int], Path]
 LinuxAdapterFactory = Callable[[], CapabilitiesProvider]
+WindowsAdapterFactory = Callable[[], CapabilitiesProvider]
+PlatformName = Callable[[], str]
 
 
 def _default_video_device_path(device_index: int) -> Path:
@@ -75,6 +86,8 @@ def run_preflight(
     *,
     video_device_path: VideoDevicePath = _default_video_device_path,
     linux_adapter_factory: LinuxAdapterFactory = LinuxSettingsAdapter,
+    windows_adapter_factory: WindowsAdapterFactory = WindowsSettingsAdapter,
+    platform_name: PlatformName = platform.system,
 ) -> PreflightReport:
     """Run every non-mutating check for one loaded, already-validated config."""
 
@@ -93,8 +106,8 @@ def run_preflight(
             model_path=config.embedding.model_path,
             model_sha256=config.embedding.model_sha256,
         ),
-        _check_camera(config, video_device_path),
-        _check_settings(config, linux_adapter_factory),
+        _check_camera(config, video_device_path, platform_name),
+        _check_settings(config, linux_adapter_factory, windows_adapter_factory),
     )
     return PreflightReport(checks=checks)
 
@@ -123,12 +136,31 @@ def _check_model(
     return CheckResult(name, CheckStatus.PASS, f"verified {len(data)} bytes at {model_path}")
 
 
-def _check_camera(config: AppConfig, video_device_path: VideoDevicePath) -> CheckResult:
+def _check_camera(
+    config: AppConfig, video_device_path: VideoDevicePath, platform_name: PlatformName
+) -> CheckResult:
     name = "camera_device"
     if not config.camera.enabled:
         return CheckResult(name, CheckStatus.SKIPPED, "camera disabled")
     if config.camera.source != "webcam":
         return CheckResult(name, CheckStatus.SKIPPED, f"source={config.camera.source}, not webcam")
+    system = platform_name()
+    if system == "Windows":
+        # Windows has no stable, enumerable device-path equivalent to
+        # /dev/videoN to stat, and this preflight never opens the camera
+        # (that would make it a mutating check). Reported explicitly as
+        # deferred rather than silently skipped or falsely passed.
+        return CheckResult(
+            name,
+            CheckStatus.SKIPPED,
+            "Windows camera validation is deferred to runtime capture via "
+            "cv2.VideoCapture(device_index, cv2.CAP_DSHOW); this non-mutating "
+            "preflight does not enumerate a device path or open the camera on Windows",
+        )
+    if system != "Linux":
+        return CheckResult(
+            name, CheckStatus.SKIPPED, f"camera preflight is not implemented for {system}"
+        )
     path = video_device_path(config.camera.device_index)
     if not path.exists():
         return CheckResult(name, CheckStatus.FAIL, f"{path} does not exist")
@@ -143,12 +175,29 @@ def _check_camera(config: AppConfig, video_device_path: VideoDevicePath) -> Chec
     return CheckResult(name, CheckStatus.PASS, f"{path} exists and is read/write accessible")
 
 
-def _check_settings(config: AppConfig, linux_adapter_factory: LinuxAdapterFactory) -> CheckResult:
+def _check_settings(
+    config: AppConfig,
+    linux_adapter_factory: LinuxAdapterFactory,
+    windows_adapter_factory: WindowsAdapterFactory,
+) -> CheckResult:
     name = "settings_capabilities"
-    if config.settings.backend != "linux":
-        return CheckResult(name, CheckStatus.SKIPPED, "settings.backend is not linux")
-    capabilities = linux_adapter_factory().capabilities()
-    detail = f"volume={capabilities.volume.value}, brightness={capabilities.brightness.value}"
-    if capabilities.volume != CapabilityStatus.AVAILABLE:
-        return CheckResult(name, CheckStatus.FAIL, f"amixer volume control not available: {detail}")
-    return CheckResult(name, CheckStatus.PASS, detail)
+    if config.settings.backend == "linux":
+        capabilities = linux_adapter_factory().capabilities()
+        detail = f"volume={capabilities.volume.value}, brightness={capabilities.brightness.value}"
+        if capabilities.volume != CapabilityStatus.AVAILABLE:
+            return CheckResult(
+                name, CheckStatus.FAIL, f"amixer volume control not available: {detail}"
+            )
+        return CheckResult(name, CheckStatus.PASS, detail)
+    if config.settings.backend == "windows":
+        capabilities = windows_adapter_factory().capabilities()
+        detail = f"volume={capabilities.volume.value}, brightness={capabilities.brightness.value}"
+        if (
+            capabilities.volume != CapabilityStatus.AVAILABLE
+            or capabilities.brightness != CapabilityStatus.AVAILABLE
+        ):
+            return CheckResult(
+                name, CheckStatus.FAIL, f"Windows settings controls not available: {detail}"
+            )
+        return CheckResult(name, CheckStatus.PASS, detail)
+    return CheckResult(name, CheckStatus.SKIPPED, "settings.backend is not linux or windows")

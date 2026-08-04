@@ -6,15 +6,28 @@ convention. It satisfies ADR 0003's key/data separation requirement but is
 not platform key-management (HSM/KMS) integration; rotation and disaster
 recovery remain a documented manual procedure until a production key-
 management adapter is selected.
+
+M17 routes both key creation and load-time verification through
+``face_profile.platform_security``: POSIX keeps its existing ``0700``/
+``0600`` enforcement, and Windows gets an equivalent protected-DACL
+boundary (current user + LocalSystem only) instead of the no-op that
+``os.chmod``/``mkdir(mode=...)`` are on that platform.
 """
 
 from __future__ import annotations
 
 import os
 import secrets
-import stat
 from pathlib import Path
 from typing import Protocol
+
+from face_profile.platform_security import (
+    SecurityBoundaryError,
+    ensure_private_directory,
+    harden_new_file,
+    posix_open_flags,
+    verify_private_file,
+)
 
 
 class KeyUnavailableError(RuntimeError):
@@ -44,11 +57,11 @@ class LocalFileKeyProvider:
 
     def _load_existing(self) -> bytes:
         try:
-            mode = self._path.stat().st_mode
-        except OSError as error:
-            raise KeyUnavailableError("encryption key unavailable") from error
-        if stat.S_IMODE(mode) & 0o077:
-            raise KeyUnavailableError("encryption key file permissions are too permissive")
+            verify_private_file(self._path)
+        except SecurityBoundaryError as error:
+            raise KeyUnavailableError(
+                "encryption key file permissions are too permissive"
+            ) from error
         try:
             key = self._path.read_bytes()
         except OSError as error:
@@ -59,8 +72,11 @@ class LocalFileKeyProvider:
 
     def _generate(self) -> bytes:
         key = secrets.token_bytes(self.KEY_LENGTH)
-        self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            ensure_private_directory(self._path.parent)
+        except SecurityBoundaryError as error:
+            raise KeyUnavailableError("encryption key directory unavailable") from error
+        flags = posix_open_flags(truncate=False, exclusive=True)
         try:
             descriptor = os.open(self._path, flags, 0o600)
         except OSError as error:
@@ -70,4 +86,8 @@ class LocalFileKeyProvider:
                 stream.write(key)
         except OSError as error:
             raise KeyUnavailableError("encryption key could not be created") from error
+        try:
+            harden_new_file(self._path)
+        except SecurityBoundaryError as error:
+            raise KeyUnavailableError("encryption key could not be secured") from error
         return key

@@ -47,23 +47,51 @@ def _user_in_video_group() -> bool | None:
     return video_group.gr_gid in group_ids
 
 
+_WINDOWS_HINT = (
+    "webcam diagnostics beyond this message are not available on Windows (no "
+    "/dev/videoN-equivalent device path is enumerated or probed here -- see "
+    "docs/RUNNING_ON_WINDOWS.md). If cv2.VideoCapture(device_index, cv2.CAP_DSHOW) "
+    "failed to open, check, in order: (1) Settings > Privacy & security > Camera "
+    "-- both 'Camera access' and 'Let apps access your camera' must be on, and "
+    "this specific app/terminal must be allowed; (2) Device Manager > Cameras "
+    "(or Imaging devices) for a yellow-triangle driver problem, and reinstall/"
+    "update the driver if present; (3) whether another application (Camera app, "
+    "a video-call client, or another instance of this service) is already "
+    "holding the device open -- Windows' camera driver model generally allows "
+    "only one exclusive-mode consumer at a time, unlike Linux V4L2's more "
+    "permissive sharing; (4) that device_index actually matches this camera -- "
+    "Windows does not expose stable /dev/videoN-style indices, so a different "
+    "camera, a virtual camera driver, or a docked/undocked USB hub can silently "
+    "renumber which index is which; re-enumerate and try adjacent small integers "
+    "if unsure which one is correct."
+)
+
+_GENERIC_HINT = (
+    "webcam diagnostics beyond this message are Linux-only; confirm the "
+    "camera is connected, its driver is installed, and no other "
+    "application is holding it open"
+)
+
+
 def diagnose_webcam(device_index: int) -> WebcamDiagnostics:
     """Inspect the local system for a likely reason a webcam failed to open.
 
-    Linux-only (``/dev/video*`` + V4L2 device nodes); on other platforms
-    this returns a generic hint since device enumeration is not portable.
+    Linux-only for actual device-path/permission inspection (``/dev/video*``
+    + V4L2 device nodes); Windows gets actionable, non-mutating guidance
+    text instead (M17) rather than a generic message, but never pretends a
+    device path exists or probes/opens the camera itself -- Windows has no
+    stable, enumerable device-path equivalent to ``/dev/videoN``. Every
+    other platform falls back to a generic hint.
     """
 
-    if platform.system() != "Linux":
+    system = platform.system()
+    if system == "Windows":
         return WebcamDiagnostics(
-            device_path=None,
-            device_exists=None,
-            permission_ok=None,
-            hint=(
-                "webcam diagnostics beyond this message are Linux-only; confirm the "
-                "camera is connected, its driver is installed, and no other "
-                "application is holding it open"
-            ),
+            device_path=None, device_exists=None, permission_ok=None, hint=_WINDOWS_HINT
+        )
+    if system != "Linux":
+        return WebcamDiagnostics(
+            device_path=None, device_exists=None, permission_ok=None, hint=_GENERIC_HINT
         )
 
     device_path = f"/dev/video{device_index}"

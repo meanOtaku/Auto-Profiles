@@ -54,7 +54,17 @@ class CommandRunner(Protocol):
 
 
 class SubprocessCommandRunner:
-    """Real command runner used only by the production Linux adapter."""
+    """Real command runner, reused by the production Linux and Windows adapters.
+
+    Always invoked with an explicit argument list (never ``shell=True`` and
+    never a caller-assembled shell string), so this boundary itself cannot
+    introduce shell injection regardless of what a caller passes as
+    ``args`` -- each element becomes exactly one argv entry to the child
+    process, with no shell metacharacter interpretation at all.
+    """
+
+    def __init__(self, *, timeout_seconds: float = _COMMAND_TIMEOUT_SECONDS) -> None:
+        self._timeout_seconds = timeout_seconds
 
     def run(self, args: tuple[str, ...]) -> CommandResult:
         try:
@@ -62,8 +72,9 @@ class SubprocessCommandRunner:
                 args,
                 capture_output=True,
                 text=True,
-                timeout=_COMMAND_TIMEOUT_SECONDS,
+                timeout=self._timeout_seconds,
                 check=False,
+                shell=False,
             )
         except (OSError, subprocess.TimeoutExpired):
             return CommandResult(return_code=-1, stdout="", stderr="command execution failed")
